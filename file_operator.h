@@ -31,13 +31,11 @@ private:
     memory_record mem_pool;//缓存file_pool中结构体的信息
     size_t pool_number;//file_pool中储存的地址条数
     size_t mem_pool_number;//mem_pool中储存的信息条数
-    size_t node_number;//对应file中的节点个数
 public:
     pool(char file_pool_name[]) {
         if (open_file(file_pool, file_pool_name)) {
             file_pool.seekg(0, std::ios::beg);
             file_pool.read(reinterpret_cast<char *>(&pool_number), sizeof(size_t));
-            file_pool.read(reinterpret_cast<char *>(&node_number), sizeof(size_t));
             if (pool_number >= max_pool_number / 2) {//mem_poo存储半满
                 file_pool.seekg(pool_number * sizeof(size_t) - size_node_pool / 2, std::ios::cur);
                 mem_pool_number = max_pool_number / 2;
@@ -45,10 +43,9 @@ public:
             file_pool.read(reinterpret_cast<char *>(&mem_pool), size_node_pool / 2);
             file_pool.seekg(-size_node_pool / 2, std::ios::cur);//将文件指针指向对应位置
         } else {
-            pool_number = pool_number = mem_pool_number = 0;
+            pool_number = mem_pool_number = 0;
             file_pool.seekg(0, std::ios::beg);
             file_pool.write(reinterpret_cast<char *>(&pool_number), sizeof(size_t));
-            file_pool.write(reinterpret_cast<char *>(&node_number), sizeof(size_t));
         }
     }
 
@@ -56,11 +53,10 @@ public:
         file_pool.write(reinterpret_cast<char *>(&mem_pool), size_node_pool);//将缓存中的内容存入
         file_pool.seekg(0, std::ios::beg);
         file_pool.write(reinterpret_cast<char *>(&pool_number), sizeof(size_t));//更新信息条数
-        file_pool.write(reinterpret_cast<char *>(&node_number), sizeof(size_t));//更新节点个数
         file_pool.close();
     }
 
-    bool empty() const { return pool_number; }
+    bool empty() const { return !pool_number; }
 
     //给出pool中记录的相应文件中的空间，并返回对应起始地址
     //若相应pool的缓存的信息条数小于满数量的1/4，在pool中再取1/2满数量，放入缓存
@@ -92,10 +88,6 @@ public:
             mem_pool_number -= max_pool_number / 2;
         }
     }
-
-    inline size_t get_number() { return node_number; }
-
-    inline void add_number() { ++node_number; }
 };
 
 template<class cache_node, int max>
@@ -141,6 +133,7 @@ public:
         while (p != nullptr) {
             if (p->address == addr) {
                 if (p_pre != nullptr) { p_pre->next = p->next; }
+                else { link[addr % max] = p->next; }
                 delete p;
                 return;
             } else {
@@ -185,7 +178,7 @@ private:
     std::fstream file;
     cache_node *head;
     cache_node *tail;
-    hash_link<cache_node, max> random_access;
+    hash_link<cache_node, 10007> random_access;
     pool content_pool;
 
     void pop() {//缓存已满，将链表头部弹出，并更新对应文件
@@ -219,7 +212,7 @@ private:
 
 public:
     cache(char file_name[], char file_pool_name[]) : content_pool(file_pool_name) {
-        open_file(file, file_name);
+        if (!open_file(file, file_name)) { get_memory(); }//创建初始空根节点
         head = new cache_node;
         tail = new cache_node;
         head->next = tail;
@@ -234,7 +227,7 @@ public:
         file.close();
     }
 
-    content &get(size_t address) {
+    content *get(size_t address) {
         //访问address对应的文件内容
         //若缓存中已经存储了该地址对应信息，则返回对应内容，并将其提到link尾部
         //若缓存中未存储该地址对应信息，则文件中读取，插到link尾部，返回对应内容
@@ -243,11 +236,12 @@ public:
         if (p == nullptr) {
             if (size == max) { pop(); }//若已满，弹出最前的一条信息
             p = new cache_node(address, tail, tail->pre, new content);
+            file.seekg(address, std::ios::beg);
             file.read(reinterpret_cast<char *>(p->to), sizeof(content));
-            random_access.insert(address);
+            random_access.insert(address, p);
             ++size;
         } else { adjust(p); }
-        return *(p->to);
+        return p->to;
     }
 
     size_t get_memory() {
@@ -271,46 +265,36 @@ public:
         }
     }
 
-    inline size_t get_number() { return content_pool.get_number(); }
-
-    inline void add_number() { content_pool.add_number(); }
+    inline size_t pos() { return file.tellg(); }
 
 };
 
 template<class key_node, class info_node>
 class files {
 private:
-    std::fstream file_key;//储存Key查找树的文件
-    std::fstream file_info;//储存具体信息的文件
-    cache<key_node, sizeof(key_node)> cache_key;//key相关的缓存
-    cache<info_node, sizeof(info_node)> cache_info;//info相关的缓存
+    cache<key_node, 10000> cache_key;//key相关的缓存
+    cache<info_node, 10000> cache_info;//info相关的缓存
 public:
     files(char file_key_name[], char file_info_name[],
           char file_pool_key_name[], char file_pool_info_name[]) ://初始化各个部分
             cache_key(file_key_name, file_pool_key_name),
-            cache_info(file_info_name, file_pool_info_name) {//打开相关文件
-        open_file(file_key, file_key_name);
-        open_file(file_info, file_info_name);
-    }
+            cache_info(file_info_name, file_pool_info_name) {}
 
-    ~files() {
-        file_key.close();
-        file_info.close();
-    }
+    ~files() {}
 
-    inline bool empty_tree() { return !cache_key.get_number(); }
+    inline bool empty_tree() { return !cache_key.get(0).number; }
 
-    inline size_t get_number() { return cache_key.get_number(); }
+    key_node *get_key(size_t address) { return cache_key.get(address); }
 
-    inline void add_number() { cache_key.add_number(); }
+    info_node *get_info(size_t address) { return cache_info.get(address); }
 
-    void read_key(key_node &obj, size_t address) { obj = cache_key.get(address); }
+    size_t get_addr_key() { return cache_key.get_memory(); }
 
-    void read_info(info_node &obj, size_t address) { obj = cache_info.get(address); }
+    size_t get_addr_info() { return cache_info.get_memory(); }
 
-    void write_key(const key_node &obj, size_t address) { cache_key.get(address) = obj; }
+    void free_addr_key(size_t address) { return cache_key.free_memory(address); }
 
-    void write_info(const info_node &obj, size_t address) { cache_info.get(address) = obj; }
+    void free_addr_info(size_t address) { return cache_info.free_memory(address); }
 
 };
 
