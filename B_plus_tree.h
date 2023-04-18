@@ -85,6 +85,28 @@ private:
         throw 1;
     }
 
+    inline bool judge_borrow_left(key_node *key_tmp, int i) {//判断是否可以向左借块
+        if (i == 0) { return false; }
+        if (key_tmp->is_leaf) {
+            info_node *info_tmp = Files.get_info(key_tmp->address[i - 1]);
+            return info_tmp->number > max_info_number / 2;
+        } else {
+            key_node *key_tmp_left = Files.get_key(key_tmp->address[i - 1]);
+            return key_tmp_left->number > max_info_number / 2;
+        }
+    }
+
+    inline bool judge_borrow_right(key_node *key_tmp, int i) {//判断是否可以向右借块
+        if (i == key_tmp->number) { return false; }
+        if (key_tmp->is_leaf) {
+            info_node *info_tmp = Files.get_info(key_tmp->address[i + 1]);
+            return info_tmp->number > max_info_number / 2;
+        } else {
+            key_node *key_tmp_left = Files.get_key(key_tmp->address[i + 1]);
+            return key_tmp_left->number > max_info_number / 2;
+        }
+    }
+
 public:
     B_plus_tree(char file_key_name[], char file_info_name[],
                 char file_pool_key_name[], char file_pool_info_name[]) :
@@ -96,11 +118,15 @@ public:
     ~B_plus_tree() {}
 
     //找到所有键值为key的信息，并按value从小到大输出value值
-    bool find(const Key &key) { find(key, 0); }//包裹函数
+    bool find(const Key &key) {
+        bool flag = false;
+        find(key, 0, flag);
+        if (!flag) { printf("null"); }
+    }//包裹函数
 
     //若目标key值只可能出现在当前子树上，返回false，表结束查找
     //反之，返回true，表继续查找
-    bool find(const Key &key, size_t addr) {
+    bool find(const Key &key, size_t addr, bool &flag) {
         key_node *key_tmp = Files.get_key(addr);
         if (key_tmp->is_leaf) {//叶节点，到info对应文件里查找
             info_node *info_tmp;
@@ -110,7 +136,10 @@ public:
                     for (int j = 0; j < info_tmp->number; ++j) {
                         if (info_tmp->key[j] < key) { continue; }
                         else if (key < info_tmp->key[j]) { return false; }//结束
-                        else { info_tmp->info[j].print(); }
+                        else {
+                            info_tmp->info[j].print();
+                            flag = true;
+                        }
                     }
                 }
             }
@@ -118,7 +147,7 @@ public:
         } else {//非叶节点，递归查找
             for (int i = 0; i <= key_tmp->number; ++i) {
                 if (judge_key(key_tmp, i, key)) {
-                    if (!find(key, key_tmp->address[i])) { return false; }//已经结束
+                    if (!find(key, key_tmp->address[i], flag)) { return false; }//已经结束
                 }
             }
             return true;//没有在中间结束，表面后面可能还有符合要求的信息，继续查找
@@ -142,13 +171,13 @@ public:
             key_new_one->is_leaf = key_root->is_leaf;
             key_new_one->address[max_key_number / 2] = key_root->address[max_key_number / 2];
             key_new_one->number = max_key_number / 2;
-            for (int i = 0; i < max_key_number / 2 - 1; ++i) {//更新第二个节点
+            for (int i = 0; i < max_key_number / 2; ++i) {//更新第二个节点
                 key_new_two->key[i] = key_root->key[i + max_key_number / 2 + 1];
                 key_new_two->address[i] = key_root->address[i + max_key_number / 2 + 1];
             }
             key_new_two->is_leaf = key_root->is_leaf;
-            key_new_two->address[max_key_number / 2 - 1] = key_root->address[max_key_number];
-            key_new_two->number = max_key_number / 2 - 1;
+            key_new_two->address[max_key_number / 2] = key_root->address[max_key_number];
+            key_new_two->number = max_key_number / 2;
             //更新新的根节点
             key_root->is_leaf = false;
             key_root->key[0] = key_root->key[max_key_number / 2];
@@ -162,7 +191,8 @@ public:
     //反之，返回true
     //flag为true，表示需继续向上裂块
     //mark为true，表示这是树上最右一条路径上的节点
-    bool insert(const Key &key, const Information &info, size_t addr, bool &flag, bool mark = true) {
+    bool insert(const Key &key, const Information &info,
+                size_t addr, bool &flag, bool mark = true) {
         key_node *key_tmp = Files.get_key(addr);
         if (key_tmp->is_leaf) {
             info_node *info_tmp;
@@ -196,6 +226,7 @@ public:
         }
     }
 
+    //返回true，表示需继续向上调整
     bool adjust_insert(key_node *key_tmp, int i) {//对key_tmp的第i个儿子(0-based)进行裂块
         if (key_tmp->is_leaf) {
             //先更新信息节点
@@ -215,20 +246,152 @@ public:
             key_node *key_old = Files.get_key(key_tmp->address[i]);
             key_node *key_new = Files.get_key(new_key_addr);
             key_new->is_leaf = key_old->is_leaf;//更新叶节点标记
-            for (int j = 0; j < max_key_number / 2 - 1; ++j) {//转移
+            for (int j = 0; j < max_key_number / 2; ++j) {//转移
                 key_new->key[j] = key_old->key[j + max_key_number / 2 + 1];
                 key_new->address[j] = key_old->address[j + max_key_number / 2 + 1];
             }
-            key_new->address[max_key_number / 2 - 1] = key_old->address[max_key_number];
+            key_new->address[max_key_number / 2] = key_old->address[max_key_number];
             key_old->number = max_key_number / 2;
-            key_new->number = max_key_number / 2 - 1;
+            key_new->number = max_key_number / 2;
             //再将新的儿子插到key_tmp中
             key_tmp->add(key_old->key[max_key_number / 2], new_key_addr, i + 1);
             return (key_tmp->number == max_key_number);
         }
     }
 
+    void erase(const Key &key, const Information &info) {
+        Key key_tmp;
+        bool flag, mark;
+        erase(key, info, 0, flag, mark, key_tmp);
+        key_node *key_root = Files.get_key(0);
+        if (!key_root->is_leaf && key_root->number == 0) {//需要减小树高
+            size_t address_fre = key_root->address[0];
+            key_node *key_fre = Files.get_key(address_fre);
+            *(key_root) = *(key_fre);//转移根的信息
+            Files.free_addr_key(address_fre);//释放空间
+        }
+    }
 
+    //若未成功删除，返回false，表继续删除位置
+    //反之，返回true
+    //flag为true，表示需继续向上裂块
+    //mark为true，表示需要修改索引
+    //key_new为新的索引
+    bool erase(const Key &key, const Information &info,
+               size_t address, bool &flag, bool &mark, Key &key_new) {
+        key_node *key_tmp = Files.get_key(address);
+        if (key_tmp->is_leaf) {//叶节点，到info对应文件里查找
+            info_node *info_tmp;
+            for (int i = 0; i <= key_tmp->number; ++i) {
+                if (judge_key(key_tmp, i, key)) {
+                    info_tmp = Files.get_info(key_tmp->address[i]);
+                    for (int j = 0; j < info_tmp->number; ++j) {
+                        if (info_tmp->key[j] < key) { continue; }
+                        else if (key < info_tmp->key[j]) { return false; }//无对应信息，删除失败
+                        else if (info_tmp->info[j] < info) { continue; }
+                        else if (info < info_tmp->info[j]) { return false; }//无对应信息，删除失败
+                        else {//找到信息，删除
+                            info_tmp->remove(j);
+                            if (j == 0) {
+                                if (i >= 1) {//删除最前面，更新节点索引，不需向上调整索引
+                                    key_tmp->key[i - 1] = info_tmp->key[0];
+                                    mark = false;
+                                } else {//向上返回需调整的索引
+                                    mark = true;
+                                    key_new = info_tmp->key[0];
+                                }
+                            } else { mark = false; }
+                            if (info_tmp->number < max_info_number / 2) {
+                                flag = adjust_erase(key_tmp, i);//进行借块或并块调整，并更新flag
+                            } else { flag = false; }
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;//未删除
+        } else {//非叶节点，递归删除
+            for (int i = 0; i <= key_tmp->number; ++i) {
+                if (judge_key(key_tmp, i, key)) {
+                    if (erase(key, info, key_tmp->address[i], flag, mark, key_new)) {//已经成功删除
+                        if (mark && i >= 1) {//更新节点索引
+                            key_tmp->key[i - 1] = key_new;
+                            mark = false;
+                        } //向上返回需调整的索引
+                        if (flag) { flag = adjust_erase(key_tmp, i); }//进行借块或并块调整，并更新flag
+                        return true;//成功删除
+                    }
+                }
+            }
+            return false;//没有删除
+        }
+    }
+
+    //返回true，表示需继续向上调整
+    bool adjust_erase(key_node *key_tmp, int i) {//对key_tmp的第i个儿子(0-based)进行借块或并块
+        if (key_tmp->is_leaf) {//叶节点，调整信息节点
+            info_node *info_now = Files.get_info(key_tmp->address[i]);
+            info_node *info_borrow;
+            if (key_tmp->number == 0) { return false; }//表只有一个根节点，不需调整
+            if (judge_borrow_left(key_tmp, i)) {
+                info_borrow = Files.get_info(key_tmp->address[i - 1]);
+                info_now->add(info_borrow->key[info_borrow->number - 1],
+                              info_borrow->info[info_borrow->number - 1], 0);//借入
+                info_borrow->remove(info_borrow->number - 1);//移除
+                key_tmp->key[i - 1] = info_now->key[0];//更新索引
+            } else if (judge_borrow_right(key_tmp, i)) {
+                info_borrow = Files.get_info(key_tmp->address[i + 1]);
+                info_now->add(info_borrow->key[0], info_borrow->info[0], info_now->number);//借入
+                info_borrow->remove(0);//移除
+                key_tmp->key[i] = info_now->key[info_now->number - 1];//更新索引
+            } else { //将后面的一块合并到当前块上
+                if (i == key_tmp->number) {//若为最后，为了方便，向前移动一位
+                    --i;
+                    info_borrow = info_now;
+                    info_now = Files.get_info(key_tmp->address[i]);
+                } else { info_borrow = Files.get_info(key_tmp->address[i + 1]); }
+                for (int j = 0; j < info_borrow->number; ++j) {//向前并，移动
+                    info_now->key[j + info_now->number] = info_borrow->key[j];
+                    info_now->info[j + info_now->number] = info_borrow->info[j];
+                }
+                info_now->number += info_borrow->number;
+                Files.free_addr_info(key_tmp->address[i + 1]);//释放空间
+                key_tmp->remove(i + 1);
+            }
+            return key_tmp->number < max_key_number / 2;
+        } else {
+            key_node *key_now = Files.get_key(key_tmp->address[i]);
+            key_node *key_borrow;
+            if (judge_borrow_left(key_tmp, i)) {
+                key_borrow = Files.get_key(key_tmp->address[i - 1]);
+                key_now->add(key_borrow->key[key_borrow->number - 1],
+                             key_borrow->address[key_borrow->number - 1], 0);//借入
+                key_borrow->remove(key_borrow->number - 1);//移除
+                key_tmp->key[i - 1] = key_now->key[0];//更新索引
+            } else if (judge_borrow_right(key_tmp, i)) {
+                key_borrow = Files.get_key(key_tmp->address[i + 1]);
+                key_now->add(key_borrow->key[0], key_borrow->address[0], key_now->number);//借入
+                key_borrow->remove(0);//移除
+                key_tmp->key[i] = key_now->key[key_now->number - 1];//更新索引
+            } else { //将后面的一块合并到当前块上
+                if (i == key_tmp->number) {//若为最后，为了方便，向前移动一位
+                    --i;
+                    key_borrow = key_now;
+                    key_now = Files.get_key(key_tmp->address[i]);
+                } else { key_borrow = Files.get_key(key_tmp->address[i + 1]); }
+                for (int j = 0; j < key_borrow->number; ++j) {//向前并，移动
+                    key_now->key[j + key_now->number + 1] = key_borrow->key[j];
+                    key_now->address[j + key_now->number + 1] = key_borrow->address[j];
+                }
+                key_now->key[key_now->number] = key_tmp->key[i];//更新索引
+                key_now->address[key_now->number + key_borrow->number + 1] = key_borrow->address[key_borrow->number];
+                key_now->number += (key_borrow->number + 1);
+                Files.free_addr_key(key_tmp->address[i + 1]);//释放空间
+                key_tmp->remove(i + 1);
+            }
+            return key_tmp->number < max_key_number / 2;
+        }
+    }
 };
 
 #endif //B_PLUS_TREE_B_PLUS_TREE_H

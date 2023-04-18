@@ -292,9 +292,9 @@ public:
 
     size_t get_addr_info() { return cache_info.get_memory(); }
 
-    void free_addr_key(size_t address) { return cache_key.free_memory(address); }
+    void free_addr_key(size_t address) {  cache_key.free_memory(address); }
 
-    void free_addr_info(size_t address) { return cache_info.free_memory(address); }
+    void free_addr_info(size_t address) {  cache_info.free_memory(address); }
 
 };
 
