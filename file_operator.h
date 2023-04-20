@@ -18,7 +18,7 @@ inline bool open_file(std::fstream &file, char file_name[]) {
 }
 
 class pool {//实现文件空间的回收与分配
-    static const size_t size_node_pool = 4096;
+    static const size_t size_node_pool = 4096 * 4;
     static const int max_pool_number = size_node_pool / sizeof(size_t);
 private:
 #pragma pack(push, 1)
@@ -29,8 +29,8 @@ private:
     //file_pool文件的开头依次存储：对应的file中的节点个数，file_pool中储存的地址条数
     std::fstream file_pool;//用于分配、回收对应文件中的空间
     memory_record mem_pool;//缓存file_pool中结构体的信息
-    size_t pool_number;//file_pool中储存的地址条数
-    size_t mem_pool_number;//mem_pool中储存的信息条数
+    size_t pool_number;//file_pool中储存的地址条数(1-based)
+    size_t mem_pool_number;//mem_pool中储存的信息条数(1-based)
 public:
     pool(char file_pool_name[]) {
         if (open_file(file_pool, file_pool_name)) {
@@ -41,7 +41,7 @@ public:
                 mem_pool_number = max_pool_number / 2;
             } else { mem_pool_number = pool_number; }
             file_pool.read(reinterpret_cast<char *>(&mem_pool), size_node_pool / 2);
-            file_pool.seekg(-size_node_pool / 2, std::ios::cur);//将文件指针指向对应位置
+            file_pool.seekg(-(int) size_node_pool / 2, std::ios::cur);//将文件指针指向对应位置
         } else {
             pool_number = mem_pool_number = 0;
             file_pool.seekg(0, std::ios::beg);
@@ -65,9 +65,9 @@ public:
             --mem_pool_number;
         } else {
             mem_pool_number += (max_pool_number / 2 - 1);
-            file_pool.seekg(-max_pool_number / 2, std::ios::cur);
+            file_pool.seekg(-(int) size_node_pool / 2, std::ios::cur);
             file_pool.read(reinterpret_cast<char *>(&mem_pool), size_node_pool);
-            file_pool.seekg(-max_pool_number, std::ios::cur);//文件指针指向此块的开头
+            file_pool.seekg(-size_node_pool, std::ios::cur);//文件指针指向此块的开头
         }
         --pool_number;
         return mem_pool.address[mem_pool_number];
@@ -80,8 +80,7 @@ public:
         ++pool_number;
         ++mem_pool_number;
         if (mem_pool_number == max_pool_number) {
-            file_pool.write(reinterpret_cast<char *>(&mem_pool), size_node_pool);
-            file_pool.seekg(-size_node_pool / 2, std::ios::cur);//文件指针指向此块的开头
+            file_pool.write(reinterpret_cast<char *>(&mem_pool), size_node_pool / 2);//文件指针指向此块的开头
             for (int i = 0; i < max_pool_number / 2; ++i) {
                 mem_pool.address[i] = mem_pool.address[i + max_pool_number / 2];
             }//更新缓存
@@ -178,7 +177,7 @@ private:
     std::fstream file;
     cache_node *head;
     cache_node *tail;
-    hash_link<cache_node, 10007> random_access;
+    hash_link<cache_node, 49999> random_access;
     pool content_pool;
 
     void pop() {//缓存已满，将链表头部弹出，并更新对应文件
@@ -272,8 +271,8 @@ public:
 template<class key_node, class info_node>
 class files {
 private:
-    cache<key_node, 10000> cache_key;//key相关的缓存
-    cache<info_node, 10000> cache_info;//info相关的缓存
+    cache<key_node, 100000> cache_key;//key相关的缓存
+    cache<info_node, 100000> cache_info;//info相关的缓存
 public:
     files(char file_key_name[], char file_info_name[],
           char file_pool_key_name[], char file_pool_info_name[]) ://初始化各个部分
@@ -292,9 +291,9 @@ public:
 
     size_t get_addr_info() { return cache_info.get_memory(); }
 
-    void free_addr_key(size_t address) {  cache_key.free_memory(address); }
+    void free_addr_key(size_t address) { cache_key.free_memory(address); }
 
-    void free_addr_info(size_t address) {  cache_info.free_memory(address); }
+    void free_addr_info(size_t address) { cache_info.free_memory(address); }
 
 };
 
