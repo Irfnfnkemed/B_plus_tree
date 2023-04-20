@@ -3,9 +3,16 @@
 
 #include "file_operator.h"
 
+//存储Key—Information对，Key、Information均允许重复，但不允许两者都重复
+//key_node_size是key节点空间，info_node_size是info节点空间
+//Key、Information需要重载operator< 、需有默认构造函数
+//Information类需要有void print()成员函数，用于find函数中的打印
 template<class Key, class Information, int key_node_size, int info_node_size>
 class B_plus_tree {
 private:
+    //max_key_number为key_node中存储的key的最多数目(1-based)
+    //max_info_number为info_node中存储的信息的最多数目(1-based)
+    //node_key_surplus、node_info_surplus分别表示用于补齐空间的char[]的大小
     static const int max_key_number = (key_node_size - 13) / (sizeof(Key) + 8) - 1 +
                                       ((key_node_size - 13) / (sizeof(Key) + 8)) % 2;
     static const int max_info_number = (info_node_size - 4) / (sizeof(Key) + sizeof(Information)) -
@@ -48,8 +55,6 @@ private:
         Information info[max_info_number];//第i个值表第i个Key对应信息,0-based
         char completion[node_info_surplus];//补齐剩余空间
 
-        info_node(int number_ = 0) { number = number_; }
-
         void add(const Key &key_, const Information &information_, int pos) {//插入到下标为pos处
             for (int i = number - 1; i >= pos; --i) {
                 key[i + 1] = key[i];
@@ -73,25 +78,27 @@ private:
 
     files<key_node, info_node> Files;
 
-    inline bool judge_key(key_node *key_tmp, int i, const Key &key) {//判断是否要继续进入对应块中进行操作
+    //判断是否要继续进入对应块中进行操作
+    inline bool judge_key(key_node *key_tmp, int i, const Key &key) {
         if (key_tmp->number == 0) { return true; }//此时，对应只有一个信息块情况
         if (i < key_tmp->number) { return !(key_tmp->key[i] < key); }
         else { return true; }
     }
 
+    //判断是否是可插入位置(mark为true，表这是树的最后一个节点)
     inline bool judge_insert(info_node *info_tmp, const Key &key,
                              const Information &info, int i, bool mark) {
-        //判断是否是可插入位置(mark为true，表这是树的最后一个节点)
         if (info_tmp->number == 0) { return true; }//空结点，直接插入
         if (info_tmp->number == i) { return mark; }//最后一个位置，为了防止value失去顺序，插到下一个块中(除了最后一个节点外)
         if (info_tmp->key[i] < key) { return false; }
         if (key < info_tmp->key[i]) { return true; }
         if (info_tmp->info[i] < info) { return false; }
         if (info < info_tmp->info[i]) { return true; }
-        throw 1;
+        throw 1;//key-info对与已存储信息重复，抛出int类的错误
     }
 
-    inline bool judge_borrow_left(key_node *key_tmp, int i) {//判断是否可以向左借块
+    //判断是否可以向左借块
+    inline bool judge_borrow_left(key_node *key_tmp, int i) {
         if (i == 0) { return false; }
         if (key_tmp->is_leaf) {
             info_node *info_tmp = Files.get_info(key_tmp->address[i - 1]);
@@ -102,7 +109,8 @@ private:
         }
     }
 
-    inline bool judge_borrow_right(key_node *key_tmp, int i) {//判断是否可以向右借块
+    //判断是否可以向右借块
+    inline bool judge_borrow_right(key_node *key_tmp, int i) {
         if (i == key_tmp->number) { return false; }
         if (key_tmp->is_leaf) {
             info_node *info_tmp = Files.get_info(key_tmp->address[i + 1]);
@@ -347,13 +355,17 @@ public:
     ~B_plus_tree() {}
 
     //找到所有键值为key的信息，并按value从小到大输出value值
-    void find(const Key &key) {//包裹函数
+    //若未找到，输出null
+    //包裹函数，兼具判断是否找到的功能
+    void find(const Key &key) {
         bool flag = false;
         find(key, 0, flag);
         if (!flag) { printf("null"); }
     }
 
-    //包裹函数，兼具分裂根节点的功能
+    //插入指定的key-info对
+    //若key-info对与已存储信息重复，抛出int类的错误
+    //包裹函数，兼具分裂根节点的功能(保证根节点始终在文件开头)
     void insert(const Key &key, const Information &info) {
         bool flag;
         insert(key, info, 0, flag);
@@ -386,6 +398,9 @@ public:
         }
     }
 
+    //删除指定的key-info对
+    //若指定key-info不存在，不修改内容
+    //包裹函数，兼具合并根节点的功能(保证根节点始终在文件开头)
     void erase(const Key &key, const Information &info) {
         Key key_tmp;
         bool flag, mark;
