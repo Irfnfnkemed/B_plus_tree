@@ -36,3 +36,4 @@ cmake-build-debug
 CMakeLists.txt
 LICENSE
 README.md
+.idea
