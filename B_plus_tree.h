@@ -2,8 +2,9 @@
 #define B_PLUS_TREE_B_PLUS_TREE_H
 
 #include "file_operator.h"
+#include "exceptions.h"
 
-//存储Key—Information对，Key、Information均允许重复，但不允许两者都重复
+//存储Key—Information对，具有允许、不允许Key重复两种模式，但不论如何，不允许Key、Information都重复
 //key_node_size是key节点空间，info_node_size是info节点空间
 //Key、Information需要重载operator< 、需有默认构造函数
 //Information类需要有void print()成员函数，用于find函数中的打印
@@ -77,6 +78,7 @@ private:
 #pragma pack(pop)
 
     files<key_node, info_node> Files;
+    bool is_key_repeated = true;//为true，允许key重复；反之，则不可。但是不论怎样，不允许Key、Information都重复
 
     //判断是否要继续进入对应块中进行操作
     inline bool judge_key(key_node *key_tmp, int i, const Key &key) {
@@ -91,10 +93,12 @@ private:
         if (info_tmp->number == 0) { return true; }//空结点，直接插入
         if (info_tmp->number == i) { return mark; }//最后一个位置，为了防止value失去顺序，插到下一个块中(除了最后一个节点外)
         if (info_tmp->key[i] < key) { return false; }
-        if (key < info_tmp->key[i]) { return true; }
-        if (info_tmp->info[i] < info) { return false; }
-        if (info < info_tmp->info[i]) { return true; }
-        throw 1;//key-info对与已存储信息重复，抛出int类的错误
+        if (is_key_repeated) {
+            if (key < info_tmp->key[i]) { return true; }
+            if (info_tmp->info[i] < info) { return false; }
+            if (info < info_tmp->info[i]) { return true; }
+            throw repeated_key_and_value();//key-info对与已存储信息重复，抛出错误
+        } else { throw repeated_key(); }//key与已存储key重复，抛出错误
     }
 
     //判断是否可以向左借块
@@ -346,13 +350,15 @@ private:
 
 public:
     B_plus_tree(char file_key_name[], char file_info_name[],
-                char file_pool_key_name[], char file_pool_info_name[]) :
+                char file_pool_key_name[], char file_pool_info_name[], bool flag = true) :
             Files(file_key_name, file_info_name, file_pool_key_name, file_pool_info_name) {
         key_node *key_root = Files.get_key(0);
         if (key_root->number == 0) { key_root->is_leaf = true; }
+        is_key_repeated = flag;
     }
 
     ~B_plus_tree() {}
+
 
     //找到所有键值为key的信息，并按value从小到大输出value值
     //若未找到，输出null
@@ -364,7 +370,7 @@ public:
     }
 
     //插入指定的key-info对
-    //若key-info对与已存储信息重复，抛出int类的错误
+    //若key或key-info对(视具体模式而定)与已存储信息重复，抛出相应的错误
     //包裹函数，兼具分裂根节点的功能(保证根节点始终在文件开头)
     void insert(const Key &key, const Information &info) {
         bool flag;
@@ -416,3 +422,4 @@ public:
 };
 
 #endif //B_PLUS_TREE_B_PLUS_TREE_H
+
