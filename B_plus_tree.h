@@ -109,7 +109,7 @@ private:
             return info_tmp->number > max_info_number / 2;
         } else {
             key_node *key_tmp_left = Files.get_key(key_tmp->address[i - 1]);
-            return key_tmp_left->number > max_info_number / 2;
+            return key_tmp_left->number > max_key_number / 2;
         }
     }
 
@@ -121,7 +121,7 @@ private:
             return info_tmp->number > max_info_number / 2;
         } else {
             key_node *key_tmp_left = Files.get_key(key_tmp->address[i + 1]);
-            return key_tmp_left->number > max_info_number / 2;
+            return key_tmp_left->number > max_key_number / 2;
         }
     }
 
@@ -174,6 +174,7 @@ private:
                         if (flag) { flag = adjust_erase(key_tmp, i); }//进行借块或并块调整，并更新flag
                         return true;//成功删除
                     }
+                    key_tmp = Files.get_key(address);//防止key_tmp失效
                 }
             }
             return false;//没有删除
@@ -279,6 +280,7 @@ private:
                         if (flag) { flag = adjust_insert(key_tmp, i); }//进行裂块调整，并更新flag
                         return true;//成功插入
                     }
+                    key_tmp = Files.get_key(addr);//防止key_tmp失效
                 }
             }
             return false;//未成功插入
@@ -342,6 +344,7 @@ private:
             for (int i = 0; i <= key_tmp->number; ++i) {
                 if (judge_key(key_tmp, i, key)) {
                     if (!find(key, key_tmp->address[i], flag)) { return false; }//已经结束
+                    key_tmp = Files.get_key(addr);//防止key_tmp失效
                 }
             }
             return true;//没有在中间结束，表面后面可能还有符合要求的信息，继续查找
@@ -349,6 +352,7 @@ private:
     }
 
 public:
+
     B_plus_tree(char file_key_name[], char file_info_name[],
                 char file_pool_key_name[], char file_pool_info_name[], bool flag = true) :
             Files(file_key_name, file_info_name, file_pool_key_name, file_pool_info_name) {
