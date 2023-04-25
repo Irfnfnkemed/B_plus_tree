@@ -2,6 +2,7 @@
 #define B_PLUS_TREE_FILE_OPERATOR_H
 
 #include <fstream>
+#include <iostream>
 
 inline bool open_file(std::fstream &file, char file_name[]) {
     file.open(file_name, std::ios::in);
@@ -18,7 +19,7 @@ inline bool open_file(std::fstream &file, char file_name[]) {
 }
 
 class pool {//实现文件空间的回收与分配
-    static const size_t size_node_pool = 4096 * 4;
+    static const size_t size_node_pool = 4096;
     static const int max_pool_number = size_node_pool / sizeof(size_t);
 private:
 #pragma pack(push, 1)
@@ -61,7 +62,7 @@ public:
     //给出pool中记录的相应文件中的空间，并返回对应起始地址
     //若相应pool的缓存的信息条数小于满数量的1/4，在pool中再取1/2满数量，放入缓存
     size_t get_pool_memory() {
-        if (pool_number < max_pool_number || mem_pool_number > max_pool_number / 4) {
+        if (pool_number < max_pool_number || mem_pool_number > 0) {
             --mem_pool_number;
         } else {
             mem_pool_number += (max_pool_number / 2 - 1);
@@ -179,6 +180,8 @@ private:
     cache_node *tail;
     hash_link<cache_node, 49999> random_access;
     pool content_pool;
+    size_t key_root;
+
 
     void pop() {//缓存已满，将链表头部弹出，并更新对应文件
         --size;
@@ -210,8 +213,22 @@ private:
     }
 
 public:
-    cache(char file_name[], char file_pool_name[]) : content_pool(file_pool_name) {
-        if (!open_file(file, file_name)) { get_memory(); }//创建初始空根节点
+
+    //store_root为真，表示文件开头存储根节点位置;反之，不存储
+    cache(char file_name[], char file_pool_name[], bool store_root = false) : content_pool(file_pool_name) {
+        if (!open_file(file, file_name)) {//创建初始空根节点
+            if (store_root) {
+                key_root = sizeof(size_t);
+                file.seekg(0, std::ios::beg);
+                file.write(reinterpret_cast<char *>(&key_root), sizeof(size_t));
+            } else { file.seekg(0, std::ios::beg); }
+            get_memory();
+        } else {
+            if (store_root) {
+                file.seekg(0, std::ios::beg);
+                file.read(reinterpret_cast<char *>(&key_root), sizeof(size_t));
+            }
+        }
         head = new cache_node;
         tail = new cache_node;
         head->next = tail;
@@ -220,6 +237,10 @@ public:
     }
 
     ~cache() {
+        if (key_root != 0) {//更新根节点位置
+            file.seekg(0, std::ios::beg);
+            file.write(reinterpret_cast<char *>(&key_root), sizeof(size_t));
+        }
         while (head->next != tail) { pop(); }
         delete head;
         delete tail;
@@ -251,7 +272,10 @@ public:
             file.seekg(0, std::ios::end);
             content tmp;
             file.write(reinterpret_cast<char *>(&tmp), sizeof(content));//生成空白区域
-            return size_t(file.tellg()) - sizeof(content);
+            size_t a = file.tellg();
+            size_t b = sizeof(content);
+            size_t c = a - b;
+            return c;
         } else { return content_pool.get_pool_memory(); }
     }
 
@@ -264,7 +288,9 @@ public:
         }
     }
 
-    inline size_t pos() { return file.tellg(); }
+    inline size_t get_root_addr() { return key_root; }
+
+    inline void update_root_addr(size_t addr) { key_root = addr; }
 
 };
 
@@ -276,12 +302,14 @@ private:
 public:
     files(char file_key_name[], char file_info_name[],
           char file_pool_key_name[], char file_pool_info_name[]) ://初始化各个部分
-            cache_key(file_key_name, file_pool_key_name),
-            cache_info(file_info_name, file_pool_info_name) {}
+            cache_key(file_key_name, file_pool_key_name, true),
+            cache_info(file_info_name, file_pool_info_name, false) {}
 
     ~files() {}
 
-    inline bool empty_tree() { return !cache_key.get(0).number; }
+    inline size_t get_root_addr() { return cache_key.get_root_addr(); }
+
+    inline void update_root_addr(size_t addr) { return cache_key.update_root_addr(addr); }
 
     key_node *get_key(size_t address) { return cache_key.get(address); }
 
