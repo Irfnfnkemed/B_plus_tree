@@ -14,22 +14,24 @@ private:
     //max_key_number为key_node中存储的key的最多数目(1-based)
     //max_info_number为info_node中存储的信息的最多数目(1-based)
     //node_key_surplus、node_info_surplus分别表示用于补齐空间的char[]的大小
-    static const int max_key_number = (key_node_size - 25) / (sizeof(Key) + 8) - 1 +
-                                      ((key_node_size - 25) / (sizeof(Key) + 8)) % 2;
-    static const int max_info_number = (info_node_size - 16) / (sizeof(Key) + sizeof(Information)) -
-                                       ((info_node_size - 16) / (sizeof(Key) + sizeof(Information))) % 2;
-    static const int node_key_surplus = key_node_size - 25 - max_key_number * (sizeof(Key) + 8);
-    static const int node_info_surplus = info_node_size - 16 - max_info_number * (sizeof(Key) + sizeof(Information));
+    static const int max_key_number = (key_node_size - 13) / (sizeof(Key) + 8) - 1 +
+                                      ((key_node_size - 13) / (sizeof(Key) + 8)) % 2;
+    static const int max_info_number = (info_node_size - 4) / (sizeof(Key) + sizeof(Information)) -
+                                       ((info_node_size - 4) / (sizeof(Key) + sizeof(Information))) % 2;
+    static const int node_key_surplus = key_node_size - 13 - max_key_number * (sizeof(Key) + 8);
+    static const int node_info_surplus = info_node_size - 4 - max_info_number * (sizeof(Key) + sizeof(Information));
+
+    enum category {
+        KEY, INFO
+    };
 
 #pragma pack(push, 1)
 
     struct key_node {
-        size_t father = 0;//父节点位置
-        int reference = 1;//被引用数
         int number = 0;//已有Key的条数,1-based
         bool is_leaf = false;//是否为叶节点
         Key key[max_key_number];//第i个值表示第(i+1)棵子树中最小的Key,0-based
-        size_t address[max_key_number + 1] = {0};//第i个值表第i棵子树位置,0-based
+        size_t address[max_key_number + 1] = {2 * sizeof(size_t) + key_node_size};//第i个值表第i棵子树位置,0-based
         char completion[node_key_surplus];//补齐节点大小
 
         void add(const Key &key_, size_t address_, int pos) {//插入下标为pos的子树
@@ -53,8 +55,6 @@ private:
     };
 
     struct info_node {
-        size_t father = sizeof(size_t);//父节点位置
-        int reference = 1;//被引用数
         int number = 0;//已有Key的条数,1-based
         Key key[max_info_number];//第i个值表示第i个Key,0-based
         Information info[max_info_number];//第i个值表第i个Key对应信息,0-based
@@ -81,9 +81,9 @@ private:
 
 #pragma pack(pop)
 
+
     files<key_node, info_node> Files;
     bool is_key_repeated = true;//为true，允许key重复；反之，则不可。但是不论怎样，不允许Key、Information都重复
-
 
     //判断是否要继续进入对应块中进行操作
     inline bool judge_key(key_node *key_tmp, int i, const Key &key) {
@@ -127,16 +127,6 @@ private:
         } else {
             key_node *key_tmp_left = Files.get_key(key_tmp->address[i + 1]);
             return key_tmp_left->number > max_key_number / 2;
-        }
-    }
-
-    inline void update_father(size_t addr, size_t father_addr, bool is_root) {
-        if (is_root) {
-            info_node *info_son = Files.get_info(addr);
-            info_son->father = father_addr;
-        } else {
-            key_node *key_son = Files.get_key(addr);
-            key_son->father = father_addr;
         }
     }
 
@@ -224,8 +214,7 @@ private:
                     info_now->info[j + info_now->number] = info_borrow->info[j];
                 }
                 info_now->number += info_borrow->number;
-                --info_borrow->reference;//减少引用
-                Files.free_addr_info(key_tmp->address[i + 1]);//释放空间
+                Files.free_addr(key_tmp->address[i + 1], INFO);//释放空间
                 key_tmp->remove(i + 1);
             }
             return key_tmp->number < max_key_number / 2;
@@ -234,14 +223,11 @@ private:
             key_node *key_borrow;
             if (judge_borrow_left(key_tmp, i)) {
                 key_borrow = Files.get_key(key_tmp->address[i - 1]);
-                update_father(key_borrow->address[key_borrow->number], key_tmp->address[i],
-                              key_borrow->is_leaf);//更新父节点位置
                 key_now->add(key_tmp->key[i - 1], key_borrow->address[key_borrow->number], 0);//借入
                 key_tmp->key[i - 1] = key_borrow->key[key_borrow->number - 1];//更新索引
                 key_borrow->remove(key_borrow->number);//移除
             } else if (judge_borrow_right(key_tmp, i)) {
                 key_borrow = Files.get_key(key_tmp->address[i + 1]);
-                update_father(key_borrow->address[0], key_tmp->address[i], key_borrow->is_leaf);//更新父节点位置
                 key_now->add(key_tmp->key[i], key_borrow->address[0], key_now->number + 1);//借入
                 key_tmp->key[i] = key_borrow->key[0];//更新索引
                 key_borrow->remove(0);//移除
@@ -254,15 +240,11 @@ private:
                 for (int j = 0; j < key_borrow->number; ++j) {//向前并，移动
                     key_now->key[j + key_now->number + 1] = key_borrow->key[j];
                     key_now->address[j + key_now->number + 1] = key_borrow->address[j];
-                    update_father(key_borrow->address[j], key_tmp->address[i], key_borrow->is_leaf);//更新父节点位置
                 }
                 key_now->key[key_now->number] = key_tmp->key[i];//更新索引
                 key_now->address[key_now->number + key_borrow->number + 1] = key_borrow->address[key_borrow->number];
-                update_father(key_borrow->address[key_borrow->number], key_tmp->address[i],
-                              key_borrow->is_leaf);//更新父节点位置
                 key_now->number += (key_borrow->number + 1);
-                --(key_borrow->reference);//减少引用
-                Files.free_addr_key(key_tmp->address[i + 1]);//释放空间
+                Files.free_addr(key_tmp->address[i + 1], KEY);//释放空间
                 key_tmp->remove(i + 1);
             }
             return key_tmp->number < max_key_number / 2;
@@ -287,7 +269,7 @@ private:
                             info_tmp->add(key, info, j);
                             if (i >= 1 && j == 0) { key_tmp->key[i - 1] = key; }//插在最前面，更新节点索引
                             if (info_tmp->number == max_info_number) {
-                                flag = adjust_insert(key_tmp, addr, i);//进行裂块调整，并更新flag
+                                flag = adjust_insert(key_tmp, i);//进行裂块调整，并更新flag
                             } else { flag = false; }
                             return true;//成功插入
                         }
@@ -300,7 +282,7 @@ private:
                 if (judge_key(key_tmp, i, key)) {
                     if (insert(key, info, key_tmp->address[i], flag, mark && i == key_tmp->number)) {//已经成功插入
                         if (i >= 1 && key < key_tmp->key[i - 1]) { key_tmp->key[i - 1] = key; }//插在最前面，更新节点索引
-                        if (flag) { flag = adjust_insert(key_tmp, addr, i); }//进行裂块调整，并更新flag
+                        if (flag) { flag = adjust_insert(key_tmp, i); }//进行裂块调整，并更新flag
                         return true;//成功插入
                     }
                     key_tmp = Files.get_key(addr);//防止key_tmp失效
@@ -311,13 +293,12 @@ private:
     }
 
     //返回true，表示需继续向上调整
-    bool adjust_insert(key_node *key_tmp, size_t addr, int i) {//对key_tmp的第i个儿子(0-based)进行裂块
+    bool adjust_insert(key_node *key_tmp, int i) {//对key_tmp的第i个儿子(0-based)进行裂块
         if (key_tmp->is_leaf) {
             //先更新信息节点
-            size_t new_info_addr = Files.get_addr_info();//得到新空间
+            size_t new_info_addr = Files.get_addr(INFO);//得到新空间
             info_node *info_old = Files.get_info(key_tmp->address[i]);
             info_node *info_new = Files.get_info(new_info_addr);
-            info_new->father = addr;//更新父节点
             for (int j = 0; j < max_info_number / 2; ++j) {//转移
                 info_new->key[j] = info_old->key[j + max_info_number / 2];
                 info_new->info[j] = info_old->info[j + max_info_number / 2];
@@ -327,18 +308,15 @@ private:
             key_tmp->add(info_new->key[0], new_info_addr, i + 1);
             return (key_tmp->number == max_key_number);
         } else {
-            size_t new_key_addr = Files.get_addr_key();//得到新空间
+            size_t new_key_addr = Files.get_addr(KEY);//得到新空间
             key_node *key_old = Files.get_key(key_tmp->address[i]);
             key_node *key_new = Files.get_key(new_key_addr);
             key_new->is_leaf = key_old->is_leaf;//更新叶节点标记
-            key_new->father = addr;//更新父节点
             for (int j = 0; j < max_key_number / 2; ++j) {//转移
                 key_new->key[j] = key_old->key[j + max_key_number / 2 + 1];
                 key_new->address[j] = key_old->address[j + max_key_number / 2 + 1];
-                update_father(key_new->address[j], new_key_addr, key_new->is_leaf);//更新父节点位置
             }
             key_new->address[max_key_number / 2] = key_old->address[max_key_number];
-            update_father(key_new->address[max_key_number / 2], new_key_addr, key_new->is_leaf);//更新父节点位置
             key_old->number = max_key_number / 2;
             key_new->number = max_key_number / 2;
             //再将新的儿子插到key_tmp中
@@ -382,7 +360,7 @@ public:
 
     B_plus_tree(char file_key_name[], char file_info_name[],
                 char file_pool_key_name[], char file_pool_info_name[], bool flag = true) :
-            Files(file_key_name, file_info_name, file_pool_key_name, file_pool_info_name) {
+            Files(file_key_name) {
         is_key_repeated = flag;
         //处理key的根节点信息
         key_node *key_root = Files.get_key(Files.get_root_addr());
@@ -408,9 +386,9 @@ public:
         bool flag;
         insert(key, info, Files.get_root_addr(), flag);
         if (flag) {//需要分裂根节点
-            size_t new_key_addr_root = Files.get_addr_key();//得到新空间
-            size_t new_key_addr_one = Files.get_addr_key();//得到新空间
-            size_t new_key_addr_two = Files.get_addr_key();//得到新空间
+            size_t new_key_addr_root = Files.get_addr(KEY);//得到新空间
+            size_t new_key_addr_one = Files.get_addr(KEY);//得到新空间
+            size_t new_key_addr_two = Files.get_addr(KEY);//得到新空间
             key_node *key_root = Files.get_key(Files.get_root_addr());
             key_node *key_new_root = Files.get_key(new_key_addr_root);
             key_node *key_new_one = Files.get_key(new_key_addr_one);
@@ -418,23 +396,17 @@ public:
             for (int i = 0; i < max_key_number / 2; ++i) {//更新第一个节点
                 key_new_one->key[i] = key_root->key[i];
                 key_new_one->address[i] = key_root->address[i];
-                update_father(key_new_one->address[i], new_key_addr_one, key_root->is_leaf);
             }
             key_new_one->is_leaf = key_root->is_leaf;
             key_new_one->address[max_key_number / 2] = key_root->address[max_key_number / 2];
-            update_father(key_new_one->address[max_key_number / 2], new_key_addr_one, key_root->is_leaf);
             key_new_one->number = max_key_number / 2;
-            key_new_one->father = new_key_addr_root;
             for (int i = 0; i < max_key_number / 2; ++i) {//更新第二个节点
                 key_new_two->key[i] = key_root->key[i + max_key_number / 2 + 1];
                 key_new_two->address[i] = key_root->address[i + max_key_number / 2 + 1];
-                update_father(key_new_one->address[i], new_key_addr_one, key_root->is_leaf);
             }
             key_new_two->is_leaf = key_root->is_leaf;
             key_new_two->address[max_key_number / 2] = key_root->address[max_key_number];
-            update_father(key_new_one->address[max_key_number / 2], new_key_addr_one, key_root->is_leaf);
             key_new_two->number = max_key_number / 2;
-            key_new_two->father = new_key_addr_root;
             //更新新的根节点
             key_new_root->is_leaf = false;
             key_new_root->key[0] = key_root->key[max_key_number / 2];
@@ -442,8 +414,7 @@ public:
             key_new_root->address[1] = new_key_addr_two;
             key_new_root->number = 1;
             //处理原根节点
-            --(key_root->reference);//减去当前引用
-            Files.free_addr_key(Files.get_root_addr());//释放空间
+            Files.free_addr(Files.get_root_addr(), KEY);//释放空间
             Files.update_root_addr(new_key_addr_root);//更新根节点位置
         }
     }
@@ -458,14 +429,10 @@ public:
         key_node *key_root = Files.get_key(Files.get_root_addr());
         if (!key_root->is_leaf && key_root->number == 0) {//需要减小树高
             size_t key_addr_new_root = key_root->address[0];
-            key_node *key_new_root = Files.get_key(key_addr_new_root);
-            key_new_root->father = 0;//更新父节点(引用不需改，失去原根的引用，但增添了当前状态对新根的引用)
-            --(key_root->reference);
-            Files.free_addr_key(Files.get_root_addr());//释放空间
+            Files.free_addr(Files.get_root_addr(), KEY);//释放空间
             Files.update_root_addr(key_addr_new_root);//更新根节点位置
         }
     }
 };
 
 #endif //B_PLUS_TREE_B_PLUS_TREE_H
-
