@@ -8,18 +8,18 @@
 //key_node_size是key节点空间，info_node_size是info节点空间
 //Key、Information需要重载operator< 、需有默认构造函数
 //Information类需要有void print()成员函数，用于find函数中的打印
-template<class Key, class Information, int key_node_size, int info_node_size>
+template<class Key, class Information, int node_size>
 class B_plus_tree {
 private:
     //max_key_number为key_node中存储的key的最多数目(1-based)
     //max_info_number为info_node中存储的信息的最多数目(1-based)
     //node_key_surplus、node_info_surplus分别表示用于补齐空间的char[]的大小
-    static const int max_key_number = (key_node_size - 13) / (sizeof(Key) + 8) - 1 +
-                                      ((key_node_size - 13) / (sizeof(Key) + 8)) % 2;
-    static const int max_info_number = (info_node_size - 4) / (sizeof(Key) + sizeof(Information)) -
-                                       ((info_node_size - 4) / (sizeof(Key) + sizeof(Information))) % 2;
-    static const int node_key_surplus = key_node_size - 13 - max_key_number * (sizeof(Key) + 8);
-    static const int node_info_surplus = info_node_size - 4 - max_info_number * (sizeof(Key) + sizeof(Information));
+    static const int max_key_number = (node_size - 13) / (sizeof(Key) + 8) - 1 +
+                                      ((node_size - 13) / (sizeof(Key) + 8)) % 2;
+    static const int max_info_number = (node_size - 4) / (sizeof(Key) + sizeof(Information)) -
+                                       ((node_size - 4) / (sizeof(Key) + sizeof(Information))) % 2;
+    static const int node_key_surplus = node_size - 13 - max_key_number * (sizeof(Key) + 8);
+    static const int node_info_surplus = node_size - 4 - max_info_number * (sizeof(Key) + sizeof(Information));
 
     enum category {
         KEY, INFO
@@ -31,7 +31,7 @@ private:
         int number = 0;//已有Key的条数,1-based
         bool is_leaf = false;//是否为叶节点
         Key key[max_key_number];//第i个值表示第(i+1)棵子树中最小的Key,0-based
-        size_t address[max_key_number + 1] = {2 * sizeof(size_t) + key_node_size};//第i个值表第i棵子树位置,0-based
+        size_t address[max_key_number + 1] = {2 * sizeof(size_t) + node_size};//第i个值表第i棵子树位置,0-based
         char completion[node_key_surplus];//补齐节点大小
 
         void add(const Key &key_, size_t address_, int pos) {//插入下标为pos的子树
