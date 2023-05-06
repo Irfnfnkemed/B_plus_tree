@@ -166,14 +166,13 @@ public:
             erase(p);//删除节点
         }
     }
-
 };
 
 template<class key_node, class info_node>
 class files {
 private:
-    cache<key_node, 100000> cache_key;//key相关的缓存
-    cache<info_node, 100000> cache_info;//info相关的缓存
+    cache<key_node, 1000> cache_key;//key相关的缓存
+    cache<info_node, 1000> cache_info;//info相关的缓存
     size_t key_root;//根的位置
     size_t free_head;//第一个空闲节点的位置
     std::fstream file;
@@ -217,6 +216,7 @@ public:
         file.write(reinterpret_cast<char *>(&free_head), sizeof(size_t));//更新第一个空闲节点位置
         cache_key.clear(file);
         cache_info.clear(file);
+        file.close();
     }
 
     inline key_node *get_key(size_t address) { return cache_key.get(address, file); }
@@ -260,6 +260,23 @@ public:
 
     inline void update_root_addr(size_t addr) { key_root = addr; }
 
+};
+
+class base_of_snapshot_father {
+public:
+    base_of_snapshot_father() {}
+
+    ~base_of_snapshot_father() {}
+
+    virtual void erase_addr(size_t addr) = 0;
+
+    virtual void change_addr(size_t old_addr, size_t new_addr) = 0;
+
+    virtual void change_father(size_t addr, size_t new_father) = 0;
+
+    virtual void add_addr(size_t addr, size_t fa = 0, int ref = 1) = 0;
+
+    virtual void change_reference(size_t addr, int change_ref) = 0;
 };
 
 #endif //B_PLUS_TREE_FILE_OPERATOR_H
