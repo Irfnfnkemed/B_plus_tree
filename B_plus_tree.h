@@ -7,8 +7,8 @@
 //存储Key—Information对，具有允许、不允许Key重复两种模式，但不论如何，不允许Key、Information都重复
 //key_node_size是key节点空间，info_node_size是info节点空间
 //Key、Information需要重载operator< 、需有默认构造函数
-//Information类需要有void print()成员函数，用于find函数中的打印
-template<class Key, class Information, int node_size>
+//info_operator类用于find函数和modify函数，需要有find(Information)，not_find()，modify(Information,const &Information)函数
+template<class Key, class Information, int node_size, class info_operator>
 class B_plus_tree {
 private:
     //max_key_number为key_node中存储的key的最多数目(1-based)
@@ -325,9 +325,10 @@ private:
         }
     }
 
+    //mark为0，表示查找模式；mark为1，表示修改模式
     //若目标key值只可能出现在当前子树上，返回false，表结束查找
     //反之，返回true，表继续查找
-    bool find(const Key &key, size_t addr, bool &flag) {
+    bool find_and_modify(const Key &key, size_t addr, bool &flag, int mark, const Information &info = Information()) {
         key_node *key_tmp = Files.get_key(addr);
         if (key_tmp->is_leaf) {//叶节点，到info对应文件里查找
             info_node *info_tmp;
@@ -338,7 +339,8 @@ private:
                         if (info_tmp->key[j] < key) { continue; }
                         else if (key < info_tmp->key[j]) { return false; }//结束
                         else {
-                            info_tmp->info[j].print();
+                            if (!mark) { Info_operator.find(info_tmp->info[j]); }
+                            else { Info_operator.modify(info_tmp->info[j], info); }
                             flag = true;
                         }
                     }
@@ -348,7 +350,7 @@ private:
         } else {//非叶节点，递归查找
             for (int i = 0; i <= key_tmp->number; ++i) {
                 if (judge_key(key_tmp, i, key)) {
-                    if (!find(key, key_tmp->address[i], flag)) { return false; }//已经结束
+                    if (!find_and_modify(key, key_tmp->address[i], flag, mark, info)) { return false; }//已经结束
                     key_tmp = Files.get_key(addr);//防止key_tmp失效
                 }
             }
@@ -358,9 +360,10 @@ private:
 
 public:
 
-    B_plus_tree(char file_key_name[], char file_info_name[],
-                char file_pool_key_name[], char file_pool_info_name[], bool flag = true) :
-            Files(file_key_name) {
+    info_operator Info_operator;
+
+
+    B_plus_tree(char file_name[], bool flag = true) : Files(file_name) {
         is_key_repeated = flag;
         //处理key的根节点信息
         key_node *key_root = Files.get_key(Files.get_root_addr());
@@ -370,13 +373,24 @@ public:
     ~B_plus_tree() {}
 
 
-    //找到所有键值为key的信息，并按value从小到大输出value值
-    //若未找到，输出null
+    //找到所有键值为key的信息，并按value从小到大依次进行操作
+    //若未找到，进行相应操作
     //包裹函数，兼具判断是否找到的功能
     void find(const Key &key) {
         bool flag = false;
-        find(key, Files.get_root_addr(), flag);
-        if (!flag) { printf("null"); }
+        find_and_modify(key, Files.get_root_addr(), flag, 0);
+        if (!flag) { Info_operator.not_find(); }
+    }
+
+    //找到键值为key的信息，并修改对应的value
+    //若未找到，进行相应操作
+    //仅适用于键值不可重复的情况
+    //包裹函数，兼具判断是否找到的功能
+    void modify(const Key &key, const Information &info) {
+        if (is_key_repeated) { throw invalid_call(); }
+        bool flag = false;
+        find_and_modify(key, Files.get_root_addr(), flag, 1, info);
+        if (!flag) { Info_operator.not_find(); }
     }
 
     //插入指定的key-info对
