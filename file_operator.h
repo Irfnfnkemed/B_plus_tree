@@ -304,6 +304,65 @@ private:
         }
     }
 
+    //以当前状态，建立一个快照
+    //cat为false，表示当前为key节点；为true，表为info节点
+    void set_snapshot(size_t addr, bool cat = false) {
+        if (!cat) {
+            key_node *p = cache_key.get(addr, file, key_root);
+            for (int i = 0; i <= p->number; ++i) { set_snapshot(p->address[i], p->is_leaf); }
+            size_t addr_now = cache_key.pop(file, key_root, addr);
+            Snapshot_father->change_reference(addr_now, 1);//当前引用加1
+        } else {
+            info_node *p = cache_info.get(addr, file, key_root);
+            size_t addr_now = cache_info.pop(file, key_root, addr);
+            Snapshot_father->change_reference(addr_now, 1);
+        }
+    }
+
+    //删除某个快照节点
+    //在快照节点为根的树中，每个节点的引用数均减少1，若有某个块被彻底释放，还要考虑其连锁效应
+    void erase_snapshot(size_t addr, bool cat, int is_fa_free = 0) {
+        if (!cat) {
+            key_node *p = cache_key.get(addr, file, key_root);
+            int is_now_free = 0;
+            if (Snapshot_father->get_reference(addr) == 1 + is_fa_free) {
+                is_now_free = 1;//当前块将被释放
+            }
+            for (int i = 0; i <= p->number; ++i) {
+                erase_snapshot(p->address[i], p->is_leaf, is_now_free);//释放儿子
+            }
+            Snapshot_father->change_reference(addr, -(1 + is_fa_free));//修改引用数
+            free_addr(addr, 0);//释放该块
+        } else {
+            info_node *p = cache_info.get(addr, file, key_root);
+            Snapshot_father->change_reference(addr, -(1 + is_fa_free));//修改引用数
+            free_addr(addr, 1);//释放该块
+        }
+    }
+
+    //恢复以快照节点为根的树
+    //更改树上节点的父指针指向当前的父节点
+    void restore_snapshot(size_t addr, bool cat) {
+        key_node *p = get_key(addr);
+        for (int i = 0; i <= p->number; ++i) {
+            Snapshot_father->change_father(p->address[i], addr);//更改父亲指向
+            if (!p->is_leaf) { restore_snapshot(p->address[i], false); }
+        }
+    }
+
+    //释放当前的树
+    void release_root(size_t addr, bool cat) {
+        Snapshot_father->change_reference(addr, -1);//减少对当前的引用
+        int ref = Snapshot_father->get_reference(addr);
+        if (!ref && !cat) {//引用数为0、且不为叶子节点，考虑对儿子的影响
+            key_node *p = get_key(addr);
+            for (int i = 0; i <= p->number; ++i) {
+                release_root(p->address[i], p->is_leaf);
+            }
+        }
+        free_addr(addr, cat);//释放
+    }
+
 public:
 
     files(char file_name[]) {//初始化各个部分
@@ -347,7 +406,7 @@ public:
 
     inline info_node *get_info(size_t address) { return cache_info.get(address, file, key_root); }
 
-    size_t get_addr(int cat) {
+    size_t get_addr(bool cat) {
         //给出一块可行空间的地址(分配空间)
         //若有相应的空闲空间，那么返回对应起始地址，同时随之更新相关信息
         //若无有相应的空闲空间，那么直接在相应文件开新的空间，并返回对应起始地址
@@ -370,7 +429,7 @@ public:
         }
     }
 
-    void free_addr(size_t address, int cat) {
+    void free_addr(size_t address, bool cat) {
         //释放对应的空间
         //cat为0，表示对key节点进行操作；反之，对info节点进行操作
         set_break_size(true);
@@ -401,7 +460,7 @@ public:
     inline void update_root_addr(size_t addr) { key_root = addr; }
 
     //cat为0，表key；反之，表info
-    void set_modify(int cat, size_t address) {
+    void set_modify(bool cat, size_t address) {
         if (!cat) { cache_key.set_modify(address, file, key_root); }
         else { cache_info.set_modify(address, file, key_root); }
     }
@@ -411,41 +470,36 @@ public:
         cache_info.set_break_size(flag, file, key_root);
     }
 
-    //cat为0，表示当前为key节点；为1，表为info节点
-    void set_snapshot(size_t addr, int cat = 0) {
+    //以当前状态，建立一个快照
+    //包裹函数
+    void set_snapshot() {
         if (Snapshot_father == nullptr) { throw unknown_error(); }
-        if (!cat) {
-            key_node *p = cache_key.get(addr, file, key_root);
-            for (int i = 0; i <= p->number; ++i) { set_snapshot(p->address[i], p->is_leaf); }
-            size_t addr_now = cache_key.pop(file, key_root, addr);
-            Snapshot_father->change_reference(addr_now, 1);//当前引用加1
-        } else {
-            info_node *p = cache_info.get(addr, file, key_root);
-            size_t addr_now = cache_info.pop(file, key_root, addr);
-            Snapshot_father->change_reference(addr_now, 1);
-        }
+        set_break_size(true);
+        set_snapshot(key_root);
+        set_break_size(false);
     }
 
-    //在快照节点为根的树中，每个节点的引用数均减少1，若有某个块被彻底释放，还要考虑其连锁效应
-    void erase_snapshot(size_t addr, int cat = 0, int is_fa_free = 0) {
+    //删除某个快照节点
+    //包裹函数
+    void erase_snapshot(size_t addr) {
         if (Snapshot_father == nullptr) { throw unknown_error(); }
-        if (!cat) {
-            key_node *p = cache_key.get(addr, file, key_root);
-            int is_now_free = 0;
-            if (Snapshot_father->get_reference(addr) == 1 + is_fa_free) {
-                is_now_free = 1;//当前块将被释放
-            }
-            for (int i = 0; i <= p->number; ++i) {
-                erase_snapshot(p->address[i], p->is_leaf, is_now_free);//释放儿子
-            }
-            Snapshot_father->change_reference(addr, -(1 + is_fa_free));//修改引用数
-            free_addr(addr, 0);//释放该块
-        } else {
-            info_node *p = cache_info.get(addr, file, key_root);
-            Snapshot_father->change_reference(addr, -(1 + is_fa_free));//修改引用数
-            free_addr(addr, 1);//释放该块
-        }
+        set_break_size(true);
+        erase_snapshot(addr, false);
+        set_break_size(false);
     }
+
+    //恢复以快照节点为根的树
+    //包裹函数
+    void restore_snapshot(size_t addr) {
+        if (Snapshot_father == nullptr) { throw unknown_error(); }
+        set_break_size(true);
+        release_root(key_root, 0);//释放当前的根
+        Snapshot_father->change_reference(addr, 1);//增加对快照节点的引用
+        key_root = addr;//更改根
+        restore_snapshot(addr, false);
+        set_break_size(false);
+    }
+
 
 };
 
