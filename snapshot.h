@@ -64,7 +64,7 @@ public:
 
     void not_find() {}
 
-    void modify(father &Father_) { Father = Father_; }
+    void modify(father &Father_) { Father_ = Father; }
 };
 
 #pragma pack(pop)
@@ -137,12 +137,37 @@ public:
             addr_to_fa.modify(address(addr));
         } catch (...) { throw unknown_error(); }
     }
+
+    void change(size_t addr, size_t new_father, int change_ref) {
+        try {
+            addr_to_fa.find(address(addr));
+            if (addr_to_fa.Info_operator.Father.ref + change_ref < 0) { throw unknown_error(); }
+            addr_to_fa.Info_operator.Father.fa = new_father;
+            addr_to_fa.Info_operator.Father.ref += change_ref;
+            addr_to_fa.modify(address(addr));
+        } catch (...) { throw unknown_error(); }
+    }
+
+    int get_reference(size_t addr) {
+        try {
+            addr_to_fa.find(address(addr));
+            return addr_to_fa.Info_operator.Father.ref;
+        } catch (...) { throw unknown_error(); }
+    }
+
+    int get_now_reference() { return addr_to_fa.Info_operator.Father.ref; }
+
+    size_t get_father(size_t addr) {
+        try {
+            addr_to_fa.find(address(addr));
+            return addr_to_fa.Info_operator.Father.fa;
+        } catch (...) { throw unknown_error(); }
+    }
 };
 
 
 template<class Key, class Information, int node_size, class find_operator>
 class B_plus_snapshot_tree {
-    using B_plus_tree_ = B_plus_tree<Key, Information, node_size, find_operator>;
 private:
     snapshot_ID Snapshot_ID;
     snapshot_father Snapshot_father;
@@ -151,36 +176,31 @@ private:
 public:
     B_plus_snapshot_tree(char file_name[], char file_ID_name[],
                          char file_fa_name[], bool flag = true) :
-            Snapshot_ID(file_ID_name), Snapshot_father(file_fa_name), data_tree(file_name, flag) {}
+            Snapshot_ID(file_ID_name), Snapshot_father(file_fa_name), data_tree(file_name, flag) {
+        data_tree.get_Snapshot_father() = &Snapshot_father;
+        data_tree.init_father();
+    }
 
     ~B_plus_snapshot_tree() {}
 
-//    void create(char SnapshotID[]) {
-//        try { insert_ID(SnapshotID, B_plus_tree_::Files.get_root_addr()); }
-//        catch (...) { throw; }
-//
-//
-//    }
-//
-//    void erase(char SnapshotID[]) {
-//        size_t find_addr_root = Snapshot_ID.find_ID(SnapshotID);
-//        if (find_addr_root == 0) { throw none_exist_ID(); }
-//        else {
-//            try { erase(SnapshotID, find_addr_root); }
-//            catch (...) { throw; }
-//        }
-//
-//
-//    }
-//
-//    void restore(char SnapshotID[]) {
-//        size_t find_addr_root = Snapshot_ID.find_ID(SnapshotID);
-//        if (find_addr_root == 0) { throw none_exist_ID(); }
-//        else {
-//
-//
-//        }
-//    }
+    void create_snapshot(char SnapshotID[]) {
+        try { Snapshot_ID.insert_ID(SnapshotID, data_tree.get_root_addr()); }
+        catch (...) { throw; }
+        data_tree.create_snapshot();
+    }
+
+    void erase(char SnapshotID[]) {
+        size_t find_addr_root = Snapshot_ID.find_ID(SnapshotID);
+        if (find_addr_root == 0) { throw none_exist_ID(); }
+        data_tree.erase_snapshot(find_addr_root);
+        Snapshot_ID.erase_ID(SnapshotID, find_addr_root);
+    }
+
+    void restore(char SnapshotID[]) {
+        size_t find_addr_root = Snapshot_ID.find_ID(SnapshotID);
+        if (find_addr_root == 0) { throw none_exist_ID(); }
+        data_tree.restore_snapshot(find_addr_root);
+    }
 
 
     void find(const Key &key) {
