@@ -3,6 +3,7 @@
 
 #include <fstream>
 #include <iostream>
+#include "exceptions.h"
 
 class base_of_snapshot_father {
 public:
@@ -94,21 +95,20 @@ public:
 };
 
 
-template<class tmp1, class tmp2>
 class base_of_cache {
 public:
     virtual void change_son(size_t, size_t, size_t, std::fstream &, size_t &) = 0;
 };
 
-template<class content, class content_fa, int max>
-class cache : public base_of_cache<content, content_fa> {//实现缓冲区读写，缓存content类信息块
-private:
+template<class content, int max>
+class cache : public base_of_cache {//实现缓冲区读写，缓存content类信息块
+protected:
     struct cache_node {
         size_t address;
         cache_node *next;
         cache_node *pre;
         content *to;
-        bool copy = false;
+        bool modify = false;
 
         cache_node(size_t address_ = 0, cache_node *next_ = nullptr,
                    cache_node *pre_ = nullptr, content *to_ = nullptr) {
@@ -118,7 +118,7 @@ private:
             if (next != nullptr) { next->pre = this; }
             if (pre != nullptr) { pre->next = this; }
             to = to_;
-            copy = false;
+            modify = false;
         }
     };
 
@@ -128,49 +128,9 @@ private:
     hash_link<cache_node, 49999> random_access;
     base_of_snapshot_father *Snapshot_father = nullptr;
     bool break_size = false;//为真，表示可以无视size的限制
-    base_of_cache<content, content_fa> *cache_fa = nullptr;
+    base_of_cache *cache_fa = nullptr;
 
-
-    //弹出链表头部，并更新对应文件
-    void pop(std::fstream &file, size_t &root) {
-        cache_node *p = head->next;
-        if (Snapshot_father == nullptr) {//无快照情况
-            file.seekg(p->address, std::ios::beg);
-            file.write(reinterpret_cast<char *>(p->to), sizeof(content));//将缓存的内容存入文件中
-            erase(p);
-        } else {//有快照
-            if (Snapshot_father->get_reference(p->address) == 1) {//直接写入即可
-                file.seekg(p->address, std::ios::beg);
-                file.write(reinterpret_cast<char *>(p->to), sizeof(content));//将缓存的内容存入文件中
-                erase(p);
-            } else {
-                file.seekg(0, std::ios::end);
-                size_t addr_father, addr_new_now = file.tellg();
-                if (cache_fa == nullptr) {//需要复制到新节点，并且更新父节点，同时更新各节点的儿子的父亲指向，注意引用数的变化
-                    file.write(reinterpret_cast<char *>(p->to), sizeof(content));//将缓存内容存入文件末尾的新空间中
-                    for (int i = 0; i <= p->to->number; ++i) {//改变儿子的父亲指向
-                        Snapshot_father->change_father(p->to->get_addr(i), addr_new_now);
-                    }
-                    addr_father = Snapshot_father->get_father(p->address);
-                    if (addr_father == 0) {//当前为根，创建了新根
-                        root = p->address;
-                        Snapshot_father->add_addr(addr_new_now, 0);//更新新根
-                        Snapshot_father->change_reference(p->address, -1);//更新原根
-                        erase(p);
-                    } else {//更新父节点
-                        change_son(addr_father, p->address, addr_new_now, file, root);
-                        erase(p);
-                    }
-                } else {
-                    file.write(reinterpret_cast<char *>(p->to), sizeof(p));//将缓存的内容存入文件中
-                    addr_father = Snapshot_father->get_father(p->address);
-                    Snapshot_father->add_addr(addr_new_now, addr_father);
-                    cache_fa->change_son(addr_father, addr_new_now, p->address, file, root);
-                }
-            }
-        }
-    }
-
+    //将addr位置的节点的addr_old_son儿子改为addr_new_son
     void change_son(size_t addr, size_t addr_old_son, size_t addr_new_son,
                     std::fstream &file, size_t &root) {
         content *p = get(addr, file, root);
@@ -181,6 +141,7 @@ private:
                 break;
             }
         }
+        set_modify(addr, file, root);
     }
 
     void adjust(cache_node *now) {//将节点提到link尾部
@@ -202,15 +163,6 @@ private:
         --size;
     }
 
-    void erase_info(cache_node *now) {//删除当前节点(节点对应文件空间已释放，不能再写入文件中)
-        random_access.erase(now->address);//删除hash_link对应内容
-        now->pre->next = now->next;
-        now->next->pre = now->pre;
-        delete now->to;
-        delete now;
-        --size;
-    }
-
     cache_node *get_cache_node(size_t address, std::fstream &file, size_t &root) {
         //访问address对应的文件内容
         //若缓存中已经存储了该地址对应信息，则返回对应内容，并将其提到link尾部
@@ -218,23 +170,14 @@ private:
         //若在插入缓存时，发现缓存已满，则弹出link头部的内容，并更新到文件中
         cache_node *p = random_access.find(address);
         if (p == nullptr) {
-            if (size == max && !break_size) { pop(file, root); }//若已满，弹出最前的一条信息
+            bool flag = break_size;
+            set_break_size(true, file, root);
             p = new cache_node(address, tail, tail->pre, new content);
             file.seekg(address, std::ios::beg);
             file.read(reinterpret_cast<char *>(p->to), sizeof(content));
             random_access.insert(address, p);
             ++size;
-            if (Snapshot_father != nullptr) {
-                int ref = Snapshot_father->get_reference(p->address);
-                if (ref >= 2) {
-                    if (cache_fa == nullptr) {
-                        for (int i = 0; i <= p->to->number; ++i) {
-                            Snapshot_father->change_reference(p->to->get_addr(i), 1);
-                        }
-                    }
-                    p->copy = true;
-                }
-            }
+            set_break_size(flag, file, root);
         } else { adjust(p); }
         return p;
     }
@@ -263,31 +206,85 @@ public:
 
     ~cache() {}
 
+    //弹出指定节点(默认链表头部)，并更新对应文件
+    size_t pop(std::fstream &file, size_t &root, size_t addr = 0) {
+        cache_node *p;
+        if (addr == 0) { p = head->next; }
+        else { p = get_cache_node(addr, file, root); }
+        size_t addr_now = p->address;
+        if (Snapshot_father == nullptr) {//无快照情况
+            if (p->modify) {
+                file.seekg(p->address, std::ios::beg);
+                file.write(reinterpret_cast<char *>(p->to), sizeof(content));//将缓存的内容存入文件中
+            }
+            erase(p);
+        } else {//有快照
+            int ref = Snapshot_father->get_reference(p->address);
+            if (ref == 1) {//直接写入即可
+                if (p->modify) {
+                    file.seekg(p->address, std::ios::beg);
+                    file.write(reinterpret_cast<char *>(p->to), sizeof(content));//将缓存的内容存入文件中
+                }
+                erase(p);
+            } else {
+                file.seekg(0, std::ios::end);
+                size_t addr_father, addr_new_now = file.tellg();
+                addr_now = addr_new_now;
+                if (cache_fa == nullptr) {//需要复制到新节点，并且更新父节点，同时更新各节点的儿子的父亲指向，注意引用数的变化
+                    file.write(reinterpret_cast<char *>(p->to), sizeof(content));//将缓存内容存入文件末尾的新空间中
+                    for (int i = 0; i <= p->to->number; ++i) {//改变儿子的父亲指向
+                        Snapshot_father->change(p->to->get_addr(i), addr_new_now, 1);
+                    }
+                    addr_father = Snapshot_father->get_father(p->address);
+                    if (addr_father == 0) {//当前为根，创建了新根
+                        root = p->address;
+                        Snapshot_father->add_addr(addr_new_now, 0);//更新新根
+                        Snapshot_father->change_reference(p->address, -1);//更新原根
+                    } else { change_son(addr_father, p->address, addr_new_now, file, root); }//更新父节点
+                    erase(p);
+                } else {
+                    file.write(reinterpret_cast<char *>(p->to), sizeof(p));//将缓存的内容存入文件中
+                    addr_father = Snapshot_father->get_father(p->address);
+                    Snapshot_father->add_addr(addr_new_now, addr_father);
+                    cache_fa->change_son(addr_father, addr_new_now, p->address, file, root);
+                    erase(p);
+                }
+            }
+        }
+        return addr_now;
+    }
+
     inline base_of_snapshot_father *&get_Snapshot_father() { return Snapshot_father; }
 
     content *get(size_t address, std::fstream &file, size_t &root) {
         return get_cache_node(address, file, root)->to;
     }
 
-    void free_memory(size_t address) {//释放(若存在)对应的缓存
+    void free_memory(size_t address) {//释放(若存在)对应的缓存，不考虑对其父亲儿子的影响
         cache_node *p = random_access.find(address);
         if (p != nullptr) {//若缓存中有
             erase(p);//删除节点
         }
     }
 
-    inline void set_break_size(bool flag, std::fstream &file,
-                               size_t &root, cache_node *key_cache = nullptr) {
-        if (!flag) { while (size > max) { pop(file, root, key_cache); }}
+    inline void set_break_size(bool flag, std::fstream &file, size_t &root) {
+        if (!flag) { while (size > max) { pop(file, root); }}
         break_size = flag;
     }
+
+    inline base_of_cache *&get_cache_fa() { return cache_fa; }
+
+    void set_modify(size_t address, std::fstream &file, size_t &root) {
+        get_cache_node(address, file, root)->modify = true;
+    }
+
 };
 
 template<class key_node, class info_node>
 class files {
 private:
-    cache<key_node, key_node, 100> cache_key;//key相关的缓存
-    cache<info_node, key_node, 100> cache_info;//info相关的缓存
+    cache<key_node, 10> cache_key;//key相关的缓存
+    cache<info_node, 10> cache_info;//info相关的缓存
     size_t key_root;//根的位置
     size_t free_head;//第一个空闲节点的位置
     std::fstream file;
@@ -317,14 +314,17 @@ public:
             file.write(reinterpret_cast<char *>(&key_root), sizeof(size_t));
             file.write(reinterpret_cast<char *>(&free_head), sizeof(size_t));
             get_addr(0);//创建空的根节点
+            set_modify(0, key_root);
             file.seekg(0, std::ios::end);
             get_addr(1);//创建空的第一个信息节点
+            set_modify(1, sizeof(key_node) + 2 * sizeof(size_t));
         } else {
             file.seekg(0, std::ios::beg);
             file.read(reinterpret_cast<char *>(&key_root), sizeof(size_t));
             file.read(reinterpret_cast<char *>(&free_head), sizeof(size_t));
         }
         Snapshot_father = nullptr;
+        cache_info.get_cache_fa() = &cache_key;
     }
 
     ~files() {
@@ -373,23 +373,15 @@ public:
     void free_addr(size_t address, int cat) {
         //释放对应的空间
         //cat为0，表示对key节点进行操作；反之，对info节点进行操作
+        set_break_size(true);
         if (Snapshot_father != nullptr) {
             if (Snapshot_father->get_reference(address) >= 1) {//只需从缓存中删去即可
                 if (!cat) { cache_key.free_memory(address); }
                 else { cache_info.free_memory(address); }
-            } else {//需要在释放该块后(同时释放父节点与引用关系)，再对儿子进行检查，若引用数降为0，则需要释放儿子
+            } else {//需要彻底释放该块
                 file.seekg(address, std::ios::beg);
                 file.write(reinterpret_cast<char *>(&free_head), sizeof(size_t));//更新空闲节点形成的链表
                 free_head = address;
-                if (!cat) {//更新并检查儿子
-                    key_node *key_free = cache_key.get(address, file, key_root);
-                    for (int i = 0; i <= key_free->number; ++i) {
-                        Snapshot_father->change_reference(key_free->address[i], -1);
-                        if (Snapshot_father->get_now_reference() == 0) {
-                            free_addr(key_free->address[i], key_free->is_leaf);
-                        }
-                    }
-                }
                 if (!cat) { cache_key.free_memory(address); }
                 else { cache_info.free_memory(address); }
                 Snapshot_father->erase_addr(address);
@@ -401,11 +393,59 @@ public:
             if (!cat) { cache_key.free_memory(address); }
             else { cache_info.free_memory(address); }
         }
+        set_break_size(false);
     }
 
     inline size_t get_root_addr() { return key_root; }
 
     inline void update_root_addr(size_t addr) { key_root = addr; }
+
+    //cat为0，表key；反之，表info
+    void set_modify(int cat, size_t address) {
+        if (!cat) { cache_key.set_modify(address, file, key_root); }
+        else { cache_info.set_modify(address, file, key_root); }
+    }
+
+    void set_break_size(bool flag) {
+        cache_key.set_break_size(flag, file, key_root);
+        cache_info.set_break_size(flag, file, key_root);
+    }
+
+    //cat为0，表示当前为key节点；为1，表为info节点
+    void set_snapshot(size_t addr, int cat = 0) {
+        if (Snapshot_father == nullptr) { throw unknown_error(); }
+        if (!cat) {
+            key_node *p = cache_key.get(addr, file, key_root);
+            for (int i = 0; i <= p->number; ++i) { set_snapshot(p->address[i], p->is_leaf); }
+            size_t addr_now = cache_key.pop(file, key_root, addr);
+            Snapshot_father->change_reference(addr_now, 1);//当前引用加1
+        } else {
+            info_node *p = cache_info.get(addr, file, key_root);
+            size_t addr_now = cache_info.pop(file, key_root, addr);
+            Snapshot_father->change_reference(addr_now, 1);
+        }
+    }
+
+    //在快照节点为根的树中，每个节点的引用数均减少1，若有某个块被彻底释放，还要考虑其连锁效应
+    void erase_snapshot(size_t addr, int cat = 0, int is_fa_free = 0) {
+        if (Snapshot_father == nullptr) { throw unknown_error(); }
+        if (!cat) {
+            key_node *p = cache_key.get(addr, file, key_root);
+            int is_now_free = 0;
+            if (Snapshot_father->get_reference(addr) == 1 + is_fa_free) {
+                is_now_free = 1;//当前块将被释放
+            }
+            for (int i = 0; i <= p->number; ++i) {
+                erase_snapshot(p->address[i], p->is_leaf, is_now_free);//释放儿子
+            }
+            Snapshot_father->change_reference(addr, -(1 + is_fa_free));//修改引用数
+            free_addr(addr, 0);//释放该块
+        } else {
+            info_node *p = cache_info.get(addr, file, key_root);
+            Snapshot_father->change_reference(addr, -(1 + is_fa_free));//修改引用数
+            free_addr(addr, 1);//释放该块
+        }
+    }
 
 };
 
