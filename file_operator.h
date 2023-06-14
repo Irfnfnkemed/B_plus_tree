@@ -17,8 +17,6 @@ public:
 
     virtual void change_father(size_t addr, size_t new_father) = 0;
 
-    virtual void change(size_t, size_t, int) = 0;
-
     virtual void add_addr(size_t addr, size_t fa = 0, int ref = 1) = 0;
 
     virtual void change_reference(size_t addr, int change_ref) = 0;
@@ -230,7 +228,7 @@ public:
                 if (cache_fa == nullptr) {//需要复制到新节点，并且更新父节点，同时更新各节点的儿子的父亲指向，注意引用数的变化
                     file.write(reinterpret_cast<char *>(p->to), sizeof(content));//将缓存内容存入文件末尾的新空间中
                     for (int i = 0; i <= p->to->number; ++i) {//改变儿子的父亲指向
-                        Snapshot_father->change(p->to->get_addr(i), addr_new_now, 1);
+                        Snapshot_father->change_father(p->to->get_addr(i), addr_new_now);
                     }
                     addr_father = Snapshot_father->get_father(p->address);
                     if (addr_father == 0) {//当前为根，创建了新根
@@ -272,6 +270,12 @@ public:
 
     void set_modify(size_t address, std::fstream &file, size_t &root) {
         get_cache_node(address, file, root)->modify = true;
+        if (Snapshot_father != nullptr && cache_fa == nullptr) {
+            content *p = get(address, file, root);
+            for (int i = 0; i <= p->number; ++i) {
+                Snapshot_father->change_reference(p->get_addr(i), 1);//增加儿子的引用数
+            }
+        }
     }
 
 };
@@ -369,10 +373,10 @@ public:
             file.write(reinterpret_cast<char *>(&key_root), sizeof(size_t));
             file.write(reinterpret_cast<char *>(&free_head), sizeof(size_t));
             get_addr(0);//创建空的根节点
-            set_modify(0, key_root);
+            set_modify(false, key_root);
             file.seekg(0, std::ios::end);
             get_addr(1);//创建空的第一个信息节点
-            set_modify(1, sizeof(key_node) + 2 * sizeof(size_t));
+            set_modify(true, sizeof(key_node) + 2 * sizeof(size_t));
         } else {
             file.seekg(0, std::ios::beg);
             file.read(reinterpret_cast<char *>(&key_root), sizeof(size_t));
@@ -496,7 +500,7 @@ public:
         cache_info.pop_cache(file, key_root);//先将缓存清空
         cache_key.pop_cache(file, key_root);
         Snapshot_father->change_reference(addr, 1);//增加对快照节点的引用
-        release_root(key_root, 0);//释放当前的根
+        release_root(key_root, false);//释放当前的根
         key_root = addr;//更改根
         restore_snapshot(addr, false);
         set_break_size(false);
