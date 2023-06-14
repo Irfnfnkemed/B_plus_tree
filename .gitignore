@@ -31,7 +31,6 @@
 *.out
 *.app
 
-main.cpp
 cmake-build-debug
 CMakeLists.txt
 LICENSE

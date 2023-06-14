@@ -11,7 +11,7 @@
 //info_operator类用于find函数和modify函数，需要有find(Information)，not_find()，modify(Information&)函数
 template<class Key, class Information, int node_size, class info_operator>
 class B_plus_tree {
-public:
+private:
     //max_key_number为key_node中存储的key的最多数目(1-based)
     //max_info_number为info_node中存储的信息的最多数目(1-based)
     //node_key_surplus、node_info_surplus分别表示用于补齐空间的char[]的大小

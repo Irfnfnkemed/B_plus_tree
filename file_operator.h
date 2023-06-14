@@ -13,8 +13,6 @@ public:
 
     virtual void erase_addr(size_t addr) = 0;
 
-    virtual void change_addr(size_t old_addr, size_t new_addr) = 0;
-
     virtual void change_father(size_t addr, size_t new_father) = 0;
 
     virtual void add_addr(size_t addr, size_t fa = 0, int ref = 1) = 0;
@@ -22,8 +20,6 @@ public:
     virtual void change_reference(size_t addr, int change_ref) = 0;
 
     virtual int get_reference(size_t addr) = 0;
-
-    virtual int get_now_reference() = 0;
 
     virtual size_t get_father(size_t addr) = 0;
 };
@@ -283,8 +279,8 @@ public:
 template<class key_node, class info_node>
 class files {
 private:
-    cache<key_node, 10> cache_key;//key相关的缓存
-    cache<info_node, 10> cache_info;//info相关的缓存
+    cache<key_node, 200> cache_key;//key相关的缓存
+    cache<info_node, 200> cache_info;//info相关的缓存
     size_t key_root;//根的位置
     size_t free_head;//第一个空闲节点的位置
     std::fstream file;

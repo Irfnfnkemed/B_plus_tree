@@ -71,7 +71,7 @@ public:
 
 //主要用于处理ID-地址对的关系
 class snapshot_ID {
-    static const int M = 4096;
+    static const int M = 4096 * 5;
 private:
     B_plus_tree<ID, address, M, get_addr> ID_to_addr;
 public:
@@ -95,7 +95,7 @@ public:
 
 //主要用于处理父节点和引用数相关信息
 class snapshot_father : public base_of_snapshot_father {
-    static const int M = 4096;
+    static const int M = 4096 * 5;
 private:
     B_plus_tree<address, father, M, get_fa> addr_to_fa;
 public:
@@ -110,14 +110,6 @@ public:
         try {
             addr_to_fa.find(address(addr));
             addr_to_fa.erase(address(addr), addr_to_fa.Info_operator.Father);
-        } catch (...) { throw unknown_error(); }
-    }
-
-    void change_addr(size_t old_addr, size_t new_addr) {
-        try {
-            addr_to_fa.find(address(old_addr));
-            addr_to_fa.erase(address(old_addr), addr_to_fa.Info_operator.Father);
-            addr_to_fa.insert(address(new_addr), addr_to_fa.Info_operator.Father);
         } catch (...) { throw unknown_error(); }
     }
 
@@ -138,15 +130,6 @@ public:
         } catch (...) { throw unknown_error(); }
     }
 
-    void change(size_t addr, size_t new_father, int change_ref) {
-        try {
-            addr_to_fa.find(address(addr));
-            if (addr_to_fa.Info_operator.Father.ref + change_ref < 0) { throw unknown_error(); }
-            addr_to_fa.Info_operator.Father.fa = new_father;
-            addr_to_fa.Info_operator.Father.ref += change_ref;
-            addr_to_fa.modify(address(addr));
-        } catch (...) { throw unknown_error(); }
-    }
 
     int get_reference(size_t addr) {
         try {
@@ -154,8 +137,6 @@ public:
             return addr_to_fa.Info_operator.Father.ref;
         } catch (...) { throw unknown_error(); }
     }
-
-    int get_now_reference() { return addr_to_fa.Info_operator.Father.ref; }
 
     size_t get_father(size_t addr) {
         try {
@@ -184,41 +165,32 @@ public:
     ~B_plus_snapshot_tree() {}
 
     void create_snapshot(char SnapshotID[]) {
-        try { Snapshot_ID.insert_ID(SnapshotID, data_tree.get_root_addr()); }
-        catch (...) { throw; }
+        size_t find_addr_root = Snapshot_ID.find_ID(SnapshotID);
+        if (find_addr_root != 0) { throw repeated_ID(); }
         data_tree.create_snapshot();
+        Snapshot_ID.insert_ID(SnapshotID, data_tree.get_root_addr());
     }
 
-    void erase(char SnapshotID[]) {
+    void erase_snapshot(char SnapshotID[]) {
         size_t find_addr_root = Snapshot_ID.find_ID(SnapshotID);
         if (find_addr_root == 0) { throw none_exist_ID(); }
         data_tree.erase_snapshot(find_addr_root);
         Snapshot_ID.erase_ID(SnapshotID, find_addr_root);
     }
 
-    void restore(char SnapshotID[]) {
+    void restore_snapshot(char SnapshotID[]) {
         size_t find_addr_root = Snapshot_ID.find_ID(SnapshotID);
         if (find_addr_root == 0) { throw none_exist_ID(); }
         data_tree.restore_snapshot(find_addr_root);
     }
 
+    void find(const Key &key) { data_tree.find(key); }
 
-    void find(const Key &key) {
-        data_tree.find(key);
-    }
+    void modify(const Key &key) { data_tree.modify(key); }
 
-    void modify(const Key &key) {
-        data_tree.modify(key);
-    }
+    void insert(const Key &key, const Information &info) { data_tree.insert(key, info); }
 
-
-    void insert(const Key &key, const Information &info) {
-        data_tree.insert(key, info);
-    }
-
-    void erase(const Key &key, const Information &info) {
-        data_tree.erase(key, info);
-    }
+    void erase(const Key &key, const Information &info) { data_tree.erase(key, info); }
 };
 
 
