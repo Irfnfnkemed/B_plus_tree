@@ -235,9 +235,9 @@ public:
                     }
                     addr_father = Snapshot_father->get_father(p->address);
                     if (addr_father == 0) {//当前为根，创建了新根
+                        Snapshot_father->change_reference(root, -1);//更新原根
                         root = addr_new_now;
                         Snapshot_father->add_addr(addr_new_now, 0);//更新新根
-                        Snapshot_father->change_reference(p->address, -1);//更新原根
                     } else { change_son(addr_father, p->address, addr_new_now, file, root); }//更新父节点
                 } else {
                     file.write(reinterpret_cast<char *>(p->to), sizeof(content));//将缓存的内容存入文件中
@@ -329,11 +329,11 @@ private:
                 erase_snapshot(p->address[i], p->is_leaf, is_now_free);//释放儿子
             }
             Snapshot_father->change_reference(addr, -(1 + is_fa_free));//修改引用数
-            free_addr(addr, 0);//释放该块
+            free_addr(addr, false);//释放该块
         } else {
             info_node *p = cache_info.get(addr, file, key_root);
             Snapshot_father->change_reference(addr, -(1 + is_fa_free));//修改引用数
-            free_addr(addr, 1);//释放该块
+            free_addr(addr, true);//释放该块
         }
     }
 
