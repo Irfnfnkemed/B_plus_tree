@@ -6,7 +6,7 @@
 
 
 //存储Key—Information对，具有允许、不允许Key重复两种模式，但不论如何，不允许Key、Information都重复
-//key_node_size是key节点空间，info_node_size是info节点空间
+//node_size是节点空间大小
 //Key、Information需要重载operator< 、需有默认构造函数
 //info_operator类用于find函数和modify函数，需要有find(Information)，not_find()，modify(Information&)函数
 template<class Key, class Information, int node_size, class info_operator>
