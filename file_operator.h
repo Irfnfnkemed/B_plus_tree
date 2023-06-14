@@ -136,7 +136,6 @@ protected:
         content *p = get(addr, file, root);
         for (int i = 0; i <= p->number; ++i) {
             if (p->get_addr(i) == addr_old_son) {
-                Snapshot_father->change_reference(p->get_addr(i), -1);
                 p->get_addr(i) = addr_new_son;//改变指向
                 break;
             }
