@@ -11,7 +11,7 @@
 //info_operator类用于find函数和modify函数，需要有find(Information)，not_find()，modify(Information&)函数
 template<class Key, class Information, int node_size, class info_operator>
 class B_plus_tree {
-private:
+public:
     //max_key_number为key_node中存储的key的最多数目(1-based)
     //max_info_number为info_node中存储的信息的最多数目(1-based)
     //node_key_surplus、node_info_surplus分别表示用于补齐空间的char[]的大小
@@ -556,9 +556,11 @@ public:
 
     inline size_t get_root_addr() { return Files.get_root_addr(); }
 
-    void create() { Files.set_snapshot(Files.get_root_addr()); }
+    void create_snapshot() { Files.set_snapshot(); }
 
-    void erase() { Files.erase_ref(Files.get_root_addr()); }
+    void erase_snapshot(size_t addr) { Files.erase_snapshot(addr); }
+
+    void restore_snapshot(size_t addr) { Files.restore_snapshot(addr); }
 };
 
 #endif //B_PLUS_TREE_B_PLUS_TREE_H

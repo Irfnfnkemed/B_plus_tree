@@ -196,11 +196,19 @@ public:
         size = 0;
     }
 
-    void clear(std::fstream &file, size_t &root, cache *key_cache = nullptr) {
+    void clear(std::fstream &file, size_t &root) {
         break_size = true;
         while (head->next != tail) { pop(file, root); }
         delete head;
         delete tail;
+        break_size = false;
+    }
+
+    void pop_cache(std::fstream &file, size_t &root) {
+        break_size = true;
+        while (head->next != tail) { pop(file, root); }
+        head->next = tail;
+        tail->pre = head;
         break_size = false;
     }
 
@@ -212,20 +220,10 @@ public:
         if (addr == 0) { p = head->next; }
         else { p = get_cache_node(addr, file, root); }
         size_t addr_now = p->address;
-        if (Snapshot_father == nullptr) {//无快照情况
-            if (p->modify) {
+        if (p->modify) {//有修改，需要写
+            if (Snapshot_father == nullptr || Snapshot_father->get_reference(p->address) == 1) {
                 file.seekg(p->address, std::ios::beg);
-                file.write(reinterpret_cast<char *>(p->to), sizeof(content));//将缓存的内容存入文件中
-            }
-            erase(p);
-        } else {//有快照
-            int ref = Snapshot_father->get_reference(p->address);
-            if (ref == 1) {//直接写入即可
-                if (p->modify) {
-                    file.seekg(p->address, std::ios::beg);
-                    file.write(reinterpret_cast<char *>(p->to), sizeof(content));//将缓存的内容存入文件中
-                }
-                erase(p);
+                file.write(reinterpret_cast<char *>(p->to), sizeof(content));//将缓存的内容直接存入文件中
             } else {
                 file.seekg(0, std::ios::end);
                 size_t addr_father, addr_new_now = file.tellg();
@@ -237,20 +235,19 @@ public:
                     }
                     addr_father = Snapshot_father->get_father(p->address);
                     if (addr_father == 0) {//当前为根，创建了新根
-                        root = p->address;
+                        root = addr_new_now;
                         Snapshot_father->add_addr(addr_new_now, 0);//更新新根
                         Snapshot_father->change_reference(p->address, -1);//更新原根
                     } else { change_son(addr_father, p->address, addr_new_now, file, root); }//更新父节点
-                    erase(p);
                 } else {
-                    file.write(reinterpret_cast<char *>(p->to), sizeof(p));//将缓存的内容存入文件中
+                    file.write(reinterpret_cast<char *>(p->to), sizeof(content));//将缓存的内容存入文件中
                     addr_father = Snapshot_father->get_father(p->address);
                     Snapshot_father->add_addr(addr_new_now, addr_father);
-                    cache_fa->change_son(addr_father, addr_new_now, p->address, file, root);
-                    erase(p);
+                    cache_fa->change_son(addr_father, p->address, addr_new_now, file, root);
                 }
             }
         }
+        erase(p);//释放节点
         return addr_now;
     }
 
@@ -475,6 +472,8 @@ public:
     void set_snapshot() {
         if (Snapshot_father == nullptr) { throw unknown_error(); }
         set_break_size(true);
+        cache_info.pop_cache(file, key_root);//先将缓存清空
+        cache_key.pop_cache(file, key_root);
         set_snapshot(key_root);
         set_break_size(false);
     }
@@ -484,6 +483,8 @@ public:
     void erase_snapshot(size_t addr) {
         if (Snapshot_father == nullptr) { throw unknown_error(); }
         set_break_size(true);
+        cache_info.pop_cache(file, key_root);//先将缓存清空
+        cache_key.pop_cache(file, key_root);
         erase_snapshot(addr, false);
         set_break_size(false);
     }
@@ -493,8 +494,10 @@ public:
     void restore_snapshot(size_t addr) {
         if (Snapshot_father == nullptr) { throw unknown_error(); }
         set_break_size(true);
-        release_root(key_root, 0);//释放当前的根
+        cache_info.pop_cache(file, key_root);//先将缓存清空
+        cache_key.pop_cache(file, key_root);
         Snapshot_father->change_reference(addr, 1);//增加对快照节点的引用
+        release_root(key_root, 0);//释放当前的根
         key_root = addr;//更改根
         restore_snapshot(addr, false);
         set_break_size(false);
