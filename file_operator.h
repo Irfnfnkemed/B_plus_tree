@@ -22,6 +22,8 @@ public:
     virtual int get_reference(size_t addr) = 0;
 
     virtual size_t get_father(size_t addr) = 0;
+
+    virtual bool is_exist(size_t addr) = 0;
 };
 
 template<class cache_node, int max>
@@ -384,10 +386,10 @@ public:
 
     ~files() {
         file.seekg(0, std::ios::beg);
-        file.write(reinterpret_cast<char *>(&key_root), sizeof(size_t));//更新根节点位置
-        file.write(reinterpret_cast<char *>(&free_head), sizeof(size_t));//更新第一个空闲节点位置
         cache_key.clear(file, key_root);
         cache_info.clear(file, key_root);
+        file.write(reinterpret_cast<char *>(&key_root), sizeof(size_t));//更新根节点位置
+        file.write(reinterpret_cast<char *>(&free_head), sizeof(size_t));//更新第一个空闲节点位置
         file.close();
     }
 
@@ -495,6 +497,7 @@ public:
         set_break_size(true);
         cache_info.pop_cache(file, key_root);//先将缓存清空
         cache_key.pop_cache(file, key_root);
+        if (addr == key_root) { return; }//当前就是快照节点所在的根，结束
         Snapshot_father->change_reference(addr, 1);//增加对快照节点的引用
         release_root(key_root, false);//释放当前的根
         key_root = addr;//更改根
