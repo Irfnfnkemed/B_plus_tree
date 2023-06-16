@@ -434,12 +434,10 @@ public:
     void init_father() {
         Files.get_Snapshot_father() = Snapshot_father;//关联到File类中
         Files.init_father();
-        key_node *key_root = Files.get_key(Files.get_root_addr());
-        if (key_root->number == 0) {
-            if (Snapshot_father != nullptr) {//更新初始两节点的父节点与引用数信息
-                Snapshot_father->add_addr(Files.get_root_addr(), 0);
-                Snapshot_father->add_addr(Files.get_root_addr() + node_size, Files.get_root_addr());
-            } else { throw unknown_error(); }
+        //更新初始两节点的父节点与引用数信息
+        if (Snapshot_father != nullptr && !Snapshot_father->is_exist(Files.get_root_addr())) {
+            Snapshot_father->add_addr(Files.get_root_addr(), 0);
+            Snapshot_father->add_addr(Files.get_root_addr() + node_size, Files.get_root_addr());
         } else { return; }
     };
 

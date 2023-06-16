@@ -62,7 +62,7 @@ public:
 
     void find(father Father_) { Father = Father_; }
 
-    void not_find() {}
+    void not_find() { Father.ref = -1; }
 
     void modify(father &Father_) { Father_ = Father; }
 };
@@ -142,6 +142,13 @@ public:
         try {
             addr_to_fa.find(address(addr));
             return addr_to_fa.Info_operator.Father.fa;
+        } catch (...) { throw unknown_error(); }
+    }
+
+    bool is_exist(size_t addr) {
+        try {
+            addr_to_fa.find(address(addr));
+            return (addr_to_fa.Info_operator.Father.ref != -1);
         } catch (...) { throw unknown_error(); }
     }
 };

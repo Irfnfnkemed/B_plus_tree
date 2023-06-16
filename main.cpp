@@ -45,11 +45,9 @@ const int MAX_SIZE = 4096 * 5;
 
 int main() {
     B_plus_snapshot_tree<KEY, VALUE, MAX_SIZE, find_operator> a("data", "ID", "father");
-    int n;
-    scanf("%d", &n);
     char tmp[64];
     int value;
-    for (int i = 1; i <= n; ++i) {
+    while (true) {
         scanf("%s", tmp);
         try {
             if (strcmp("insert", tmp) == 0) {
@@ -71,7 +69,7 @@ int main() {
             } else if (strcmp("restore_snapshot", tmp) == 0) {
                 scanf("%s", tmp);
                 a.restore_snapshot(tmp);
-            }
+            } else if (strcmp("exit", tmp) == 0) { break; }
         } catch (exception &e) {
             std::cout << e.what() << std::endl;
         }
